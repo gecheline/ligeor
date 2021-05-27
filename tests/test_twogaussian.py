@@ -34,7 +34,7 @@ def test_fit(model, result):
     return model
     
     
-def test_compute_ecl_params(filename, result):
+def test_compute_ecl_params(model, result):
     
     eb_dict = model.compute_eclipse_params()
     for key in eb_dict.keys():

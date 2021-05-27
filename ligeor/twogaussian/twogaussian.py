@@ -56,6 +56,146 @@ class TwoGaussianModel(object):
                 'CG12E2': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell']}
 
 
+    @staticmethod
+    def check_overlapping_eclipses(func, mu1, mu2, sigma1, sigma2):
+        '''
+        Checks if the two Gaussians fit the same eclipse.
+        '''
+        if np.abs(mu2-mu1) < sigma1 or np.abs(mu2-mu1) < sigma2:
+            # refit with mu2 at 0.5 or -0.5?
+            if func == 'CG12':
+                return 'CG'
+            else:
+                return 'CGE'
+        else:
+            return func
+
+
+    @staticmethod
+    def check_eclipse_fitting_noise(func, fluxes_model, fluxes_obs, d1, d2=np.nan):
+        '''
+        Checks if the model eclipses are true or fit data noise features.
+        '''
+
+        sigma_res = np.std(fluxes_obs - fluxes_model)
+        if d1 <= 2*sigma_res:
+            # primary eclipse fits noise
+            if np.isnan(d2):
+                # no secondary eclipse, so model is either C or CE
+                new_func = 'C' if func == 'CG' else 'CE'
+            else:
+                # secondary eclipse present
+                if d2 <= 2*sigma_res:
+                    # secondary eclipse also fits noise, so model is either C or CE
+                    new_func = 'C' if func == 'CG12' else 'CE'
+                else:
+                    # secondary eclipse doesn't fit noise, but is actually prominent, so we should keep it!
+                    # TODO: this part is complicated - we need to refit the model such that secondary ecl -> primary
+                    new_func = 'refit'
+        else:
+            # primary eclipse doesn't fit noise
+            if np.isnan(d2):
+                # model okay as it is!
+                new_func = func
+            else:
+                # we have a secondary eclipse too that needs to be checked
+                if d2 <= 2*sigma_res:
+                    # secondary fits noise, remove only secondary eclipse, but keep primary
+                    new_func = 'CG' if func == 'CG12' else 'CGE'
+                else:
+                    # secondary doesn't fit noise, model okay!
+                    new_func = func
+
+        return new_func
+
+    
+    @staticmethod
+    def check_eclipse_fitting_cosine(func, w1, w2=np.nan):
+        '''
+        Checks if a Gaussian is fitted to the out-of-eclipse variability.
+        '''
+        if 5.6*w1 > 0.5:
+            if np.isnan(w2):
+                new_func = 'CE'
+            else:
+                if 5.6*w2 > 0.5:
+                    new_func = 'CE'
+                else:
+                    new_func = 'refit'
+        else:
+            if np.isnan(w2):
+                new_func = func
+            else:
+                if 5.6*w2 > 0.5:
+                    new_func = 'CGE'
+                else:
+                    new_func = func
+
+        return new_func
+
+
+    def check_fit(self):
+        '''
+        Checks for anomalies in the best fit:
+        - overlapping Gaussians
+        - a Gaussian fitted to noise
+        - a Gaussian fitted to out-of-eclipse variability
+        '''
+
+        best_fit_func = list(self.models.keys())[np.nanargmax(list(self.bics.values()))]
+
+        # CHECK IF TWO GAUSSIANS FIT THE SAME ECLIPSE
+        if best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
+            C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
+            best_fit_func_check = self.check_overlapping_eclipses(best_fit_func, mu1, mu2, sigma1, sigma2)
+            if best_fit_func != best_fit_func_check:
+                # refit with secondary 0.5 away from primary
+                new_mu2 = mu1 + 0.5
+                new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
+                self.fit_twoGaussian_models(init_pos=[mu1, new_mu2], init_widths=[sigma1, 0.01])
+                # check one last time after refitting
+                C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
+                best_fit_func = self.check_overlapping_eclipses(best_fit_func, mu1, mu2, sigma1, sigma2)
+
+        # CHECK IF ANY OF THE ECLIPSES FIT THE DATA NOISE
+        if best_fit_func in ['CG', 'CGE']:
+            C, mu1, d1, sigma1 = self.fits[best_fit_func][0][:4]
+            best_fit_func = self.check_eclipse_fitting_noise(best_fit_func, self.fluxes, self.models[best_fit_func], d1, d2=np.nan)
+        
+        elif best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
+            C, mu1, d1, sigma1, mu2, d2, sigma2= self.fits[best_fit_func][0][:7]
+            # check if primary fits noise
+            best_fit_func_check = self.check_eclipse_fitting_noise(best_fit_func, self.fluxes, self.models[best_fit_func], d1, d2=d2)
+            if best_fit_func_check == 'refit':
+                # we need to refit such that the secondary eclipse is considered the primary and remove the primary
+                best_fit_func = 'CG' if best_fit_func == 'CG12' else 'CGE'
+                new_mu2 = mu2 + 0.5
+                new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
+                self.fit_twoGaussian_models(init_pos=[mu2, new_mu2], init_widths=[sigma2, 0.])
+            else:
+                best_fit_func = best_fit_func_check
+
+        # CHECK IF ANY OF THE ECLIPSES FIT THE OUT OF ECLIPSE VARIABILITY
+        if best_fit_func in ['CG', 'CGE']:
+            C, mu1, d1, sigma1 = self.fits[best_fit_func][0][:4]
+            best_fit_func = self.check_eclipse_fitting_cosine(best_fit_func, sigma1)
+        
+        elif best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
+            C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
+            # check if primary fits noise
+            best_fit_func_check = self.check_eclipse_fitting_cosine(best_fit_func, sigma1, sigma2)
+            if best_fit_func_check == 'refit':
+                # we need to refit such that the secondary eclipse is considered the primary and remove the primary
+                best_fit_func = 'CGE'
+                new_mu2 = mu2 + 0.5
+                new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
+                self.fit_twoGaussian_models(init_pos=[mu2, new_mu2], init_widths=[sigma2, 0.])
+            else:
+                best_fit_func = best_fit_func_check
+
+        return best_fit_func
+
+
     def fit(self):
         '''
         Computes all two-gaussian models and chooses the best fit.
@@ -72,13 +212,14 @@ class TwoGaussianModel(object):
         self.compute_twoGaussian_models()
         # compute corresponding BIC values
         self.compute_twoGaussian_models_BIC()
-                
+        
+        best_fit_func = self.check_fit()
         # choose the best fit as the one with highest BIC
         self.best_fit = {}
-        self.best_fit['func'] = list(self.models.keys())[np.nanargmax(list(self.bics.values()))]
-        self.best_fit['model'] = self.models[self.best_fit['func']]
-        self.best_fit['param_vals'] = self.fits[self.best_fit['func']]
-        self.best_fit['param_names'] = self.params[self.best_fit['func']]
+        self.best_fit['func'] = best_fit_func
+        self.best_fit['model'] = self.models[best_fit_func]
+        self.best_fit['param_vals'] = self.fits[best_fit_func]
+        self.best_fit['param_names'] = self.params[best_fit_func]
 
 
     def save_model(self, nbins=1000, func='', param_values = [], save_file=''):
@@ -448,7 +589,7 @@ class TwoGaussianModel(object):
 
         return {'ecl_positions': [pos1, pos2], 'ecl_widths': [edge1r-edge1l, edge2r-edge2l]}
         
-    def fit_twoGaussian_models(self):
+    def fit_twoGaussian_models(self, init_pos=[], init_widths=[]):
         '''
         Fits all seven models to the input light curve.
         '''
@@ -456,9 +597,13 @@ class TwoGaussianModel(object):
 
         C0 = self.fluxes.max()
         ecl_dict = self.estimate_eclipse_positions_widths(self.phases, self.fluxes, diagnose_init=False)
-        self.init_positions, self.init_widths = ecl_dict['ecl_positions'], ecl_dict['ecl_widths']
-        mu10, mu20 = self.init_positions
-        sigma10, sigma20 = self.init_widths
+        if len(init_pos) == 0 or len(init_widths) == 0:
+            self.init_positions, self.init_widths = ecl_dict['ecl_positions'], ecl_dict['ecl_widths']
+            mu10, mu20 = self.init_positions
+            sigma10, sigma20 = self.init_widths
+        else:
+            mu10, mu20 = init_pos
+            sigma10, sigma20 = init_widths
         d10 = self.fluxes.max()-self.fluxes[np.argmin(np.abs(self.phases-mu10))]
         d20 = self.fluxes.max()-self.fluxes[np.argmin(np.abs(self.phases-mu20))]
         Aell0 = 0.001

@@ -10,7 +10,7 @@ from scipy.interpolate import interp1d
 
 class EmceeSampler(object):
 
-    def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000):
+    def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000, **kwargs):
 
         '''
         Initializes a sampler for the light curve stored in 'filename'
@@ -31,7 +31,8 @@ class EmceeSampler(object):
         self._nbins = nbins
         self._period_init = period_init 
         self._t0_init = t0_init
-        self._times, self._fluxes, self._sigmas = load_lc(filename, n_downsample=n_downsample)
+        lc = load_lc(filename, n_downsample=n_downsample, **kwargs)
+        self._times, self._fluxes, self._sigmas = lc['times'], lc['fluxes'], lc['sigmas']
 
     def initial_fit(self):
         # overriden by subclass
@@ -42,7 +43,7 @@ class EmceeSampler(object):
         return None
 
     def run_sampler(self, nwalkers=32, niters=2000, progress=True):
-        init_vals = self.initial_fit()
+        init_vals = self._initial_fit
         bestfit_vals = np.array([self._period_init, *init_vals])
         pos = bestfit_vals + 1e-4 * np.random.randn(nwalkers, len(bestfit_vals))
         nwalkers, ndim = pos.shape
@@ -75,7 +76,7 @@ class EmceeSampler(object):
         
         ndim = samples_top.shape[1]
         solution = []
-        labels = ['period', *self.model_param]
+        labels = ['period', *self._model_params]
         for j in range(ndim):
             mcmc = np.percentile(samples_top[:, j], [16, 50, 84])
             q = np.diff(mcmc)
@@ -143,17 +144,19 @@ class EmceeSampler(object):
             with open(results_file, 'a') as f:
                 f.write('{},{}'.format(ind,results_str))
 
+        # TODO add storing of eclipse parameters here: ecl_pos, width, depth, sigma of residuals, integrated area under ecl
         else:
             raise NotImplementedError
 
-    def compute_model_values(self, means, sigmas_low, sigmas_high):
+    def compute_model(self, means, sigmas_low, sigmas_high):
+        # overriden by subclass
         return None
 
 
 class EmceeSamplerTwoGaussian(EmceeSampler):
 
-    def __init__(self, filename, period_init, t0_init):
-        super(EmceeSamplerTwoGaussian,self).__init__(filename, period_init, t0_init)
+    def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000, **kwargs):
+        super(EmceeSamplerTwoGaussian,self).__init__(filename, period_init, t0_init, n_downsample, nbins, **kwargs)
 
 
     def initial_fit(self):
@@ -169,12 +172,10 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
                                     )
         twogModel.fit()
 
-        if twogModel.best_fit['func'] == 'C':
-            return None
-        else:
-            self.func = twogModel.best_fit['func']
-            self.model_params = twogModel.best_fit['param_names']
-            return twogModel.best_fit['param_vals']
+        # self._twogModel_init = twogModel
+        self._func = twogModel.best_fit['func']
+        self._model_params = twogModel.best_fit['param_names']
+        self._initial_fit = twogModel.best_fit['param_vals'][0]
 
 
     def logprob(self, values):
@@ -185,16 +186,15 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
         bounds = {'C': ((0),(fmax)),
             'CE': ((0, 1e-6, -0.5),(fmax, fdiff, 0.5)),
             'CG': ((0., -0.5, 0., 0.), (fmax, 0.5, fdiff, 0.5)),
-            'CGE': ((0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, fdiff)),
+            'CGE': ((0., -0.5, 0., 0., 1e-6, -0.5),(fmax, 0.5, fdiff, 0.5, fdiff, 0.5)),
             'CG12': ((0.,-0.5, 0., 0., -0.5, 0., 0.),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5)),
-            'CG12E1': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff)),
-            'CG12E2': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff))}
+            'CG12E': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6, -0.5),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff, 0.5))}
         
         period, *model_vals = values
         
         for i,param_val in enumerate(model_vals):
-            if param_val < bounds[self.func][0][i] or param_val > bounds[self.func][1][i]:
-                raise Warning('out of prior', self.func, bounds[self.func][0][i], bounds[self.func][1][i], param_val)
+            if param_val < bounds[self._func][0][i] or param_val > bounds[self._func][1][i]:
+                raise Warning('out of prior', self._func, bounds[self._func][0][i], bounds[self._func][1][i], param_val)
                 return -np.inf
             
         # fold with period
@@ -205,22 +205,23 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
                                                         t0=self._t0_init)
         # compute model with the selected twog function
         # TODO: review this part for potentially more efficient option
-        model = TwoGaussianModel.twogfuncs[self.func](phases, *model_vals)
+        twog_func = getattr(TwoGaussianModel, self._func.lower())
+        model = twog_func(phases, *model_vals)
         return -0.5*(np.sum((fluxes_ph-model)**2/sigmas_ph**2)), model_vals[1]
 
     
     def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True):
         model_results = {'C': np.nan, 'mu1': np.nan, 'd1': np.nan, 'sigma1': np.nan, 
-                        'mu2': np.nan, 'd2': np.nan, 'sigma2': np.nan, 'Aell': np.nan
+                        'mu2': np.nan, 'd2': np.nan, 'sigma2': np.nan, 'Aell': np.nan, 'phi0': np.nan
                         }
         model_results_err = {'C': np.nan, 'mu1': np.nan, 'd1': np.nan, 'sigma1': np.nan, 
-                        'mu2': np.nan, 'd2': np.nan, 'sigma2': np.nan, 'Aell': np.nan
+                        'mu2': np.nan, 'd2': np.nan, 'sigma2': np.nan, 'Aell': np.nan, 'phi0': np.nan
                         }
         
         # results_str = '{}'.format(func)
         for mkey in model_results.keys():
-            if mkey in self.model_params:
-                pind = self.model_params.index(mkey)
+            if mkey in self._model_params:
+                pind = self._model_params.index(mkey)
                 model_results[mkey] = means[pind+1]
                 model_results_err[mkey] = np.max((sigmas_low[pind+1],sigmas_high[pind+1]))
                 # results_str += ',{},{}'.format(model_results[mkey],model_results_err[mkey])
@@ -233,16 +234,17 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
             phases_obs, fluxes_ph_obs, sigmas_ph_obs = phase_fold(self._times, 
                                                     self._fluxes, 
                                                     self._sigmas, 
-                                                    period=self._period_mcmc.value, 
-                                                    t0=self._t0_mcmc.value)
+                                                    period=self._period_mcmc['value'], 
+                                                    t0=self._t0_mcmc['value'])
         
             phases_syn = np.linspace(-0.5,0.5,self._nbins)
-            fluxes_syn = TwoGaussianModel.twogfuncs[self.func](phases_syn, *means[1:])
+            twog_func = getattr(TwoGaussianModel, self._func.lower())
+            fluxes_syn =twog_func(phases_syn, *means[1:])
             
             np.savetxt(self._filename+'.2g', np.array([phases_syn, fluxes_syn]).T)
 
-            fluxes_syn_extended = np.hstack((fluxes_syn[:,1][(phases_syn > 0)], fluxes_syn, fluxes_syn[:,1][phases_syn[:,0] < 0.]))
-            phases_syn_extended = np.hstack((phases_syn[:,1][(phases_syn > 0)]-1., phases_syn, phases_syn[:,1][phases_syn[:,0] < 0.]+1.))
+            fluxes_syn_extended = np.hstack((fluxes_syn[(phases_syn > 0)], fluxes_syn, fluxes_syn[phases_syn < 0.]))
+            phases_syn_extended = np.hstack((phases_syn[(phases_syn > 0)]-1., phases_syn, phases_syn[phases_syn < 0.]+1.))
             fluxes_interp = interp1d(phases_syn_extended, fluxes_syn_extended)
             fluxes_model = fluxes_interp(phases_obs)
             chi2 = -0.5*(np.sum((fluxes_ph_obs-fluxes_model)**2/sigmas_ph_obs**2))
@@ -253,8 +255,8 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
 class EmceeSamplerPolyfit(EmceeSampler):
 
 
-    def __init__(self, filename, period_init, t0_init):
-        super(EmceeSamplerPolyfit,self).__init__(filename, period_init, t0_init)
+    def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000, **kwargs):
+        super(EmceeSamplerPolyfit,self).__init__(filename, period_init, t0_init, n_downsample, nbins, **kwargs)
 
 
     def initial_fit(self):

@@ -100,6 +100,8 @@ class Polyfit(object):
         return NotImplementedError
 
 
+    def compute_residuals_stdev(self):
+        return NotImplementedError
 
-
-    
+    def compute_eclipse_area(self, ecl=1):
+        return NotImplementedError

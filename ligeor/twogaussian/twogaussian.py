@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
-from ligeor.utils.lcutils import load_lc, extend_phasefolded_lc
+from ligeor.utils.lcutils import *
+
 
 class TwoGaussianModel(object):
 
@@ -44,156 +45,77 @@ class TwoGaussianModel(object):
                     'CG': TwoGaussianModel.cg, 
                     'CGE': TwoGaussianModel.cge, 
                     'CG12': TwoGaussianModel.cg12, 
-                    'CG12E1': TwoGaussianModel.cg12e1, 
-                    'CG12E2': TwoGaussianModel.cg12e2}
+                    'CG12E': TwoGaussianModel.cg12e
+                    }
 
         self.params = {'C': ['C'],
-                'CE': ['C', 'Aell', 'mu1'],
+                'CE': ['C', 'Aell', 'phi0'],
                 'CG': ['C', 'mu1', 'd1', 'sigma1'],
-                'CGE': ['C', 'mu1', 'd1', 'sigma1', 'Aell'],
+                'CGE': ['C', 'mu1', 'd1', 'sigma1', 'Aell', 'phi0'],
                 'CG12': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2'],
-                'CG12E1': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell'],
-                'CG12E2': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell']}
+                'CG12E': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell', 'phi0']}
 
 
-    @staticmethod
-    def check_overlapping_eclipses(func, mu1, mu2, sigma1, sigma2):
-        '''
-        Checks if the two Gaussians fit the same eclipse.
-        '''
-        if np.abs(mu2-mu1) < sigma1 or np.abs(mu2-mu1) < sigma2:
-            # refit with mu2 at 0.5 or -0.5?
-            if func == 'CG12':
-                return 'CG'
-            else:
-                return 'CGE'
-        else:
-            return func
+    # def check_fit(self):
+    #     '''
+    #     Checks for anomalies in the best fit:
+    #     - overlapping Gaussians
+    #     - a Gaussian fitted to noise
+    #     - a Gaussian fitted to out-of-eclipse variability
+    #     '''
 
+    #     best_fit_func = list(self.models.keys())[np.nanargmax(list(self.bics.values()))]
 
-    @staticmethod
-    def check_eclipse_fitting_noise(func, fluxes_model, fluxes_obs, d1, d2=np.nan):
-        '''
-        Checks if the model eclipses are true or fit data noise features.
-        '''
+    #     # CHECK IF TWO GAUSSIANS FIT THE SAME ECLIPSE
+    #     if best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
+    #         C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
+    #         best_fit_func_check = self.check_overlapping_eclipses(best_fit_func, mu1, mu2, sigma1, sigma2)
+    #         if best_fit_func != best_fit_func_check:
+    #             # refit with secondary 0.5 away from primary
+    #             new_mu2 = mu1 + 0.5
+    #             new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
+    #             self.fit_twoGaussian_models(init_pos=[mu1, new_mu2], init_widths=[sigma1, 0.01])
+    #             # check one last time after refitting
+    #             C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
+    #             best_fit_func = self.check_overlapping_eclipses(best_fit_func, mu1, mu2, sigma1, sigma2)
 
-        sigma_res = np.std(fluxes_obs - fluxes_model)
-        if d1 <= 2*sigma_res:
-            # primary eclipse fits noise
-            if np.isnan(d2):
-                # no secondary eclipse, so model is either C or CE
-                new_func = 'C' if func == 'CG' else 'CE'
-            else:
-                # secondary eclipse present
-                if d2 <= 2*sigma_res:
-                    # secondary eclipse also fits noise, so model is either C or CE
-                    new_func = 'C' if func == 'CG12' else 'CE'
-                else:
-                    # secondary eclipse doesn't fit noise, but is actually prominent, so we should keep it!
-                    # TODO: this part is complicated - we need to refit the model such that secondary ecl -> primary
-                    new_func = 'refit'
-        else:
-            # primary eclipse doesn't fit noise
-            if np.isnan(d2):
-                # model okay as it is!
-                new_func = func
-            else:
-                # we have a secondary eclipse too that needs to be checked
-                if d2 <= 2*sigma_res:
-                    # secondary fits noise, remove only secondary eclipse, but keep primary
-                    new_func = 'CG' if func == 'CG12' else 'CGE'
-                else:
-                    # secondary doesn't fit noise, model okay!
-                    new_func = func
-
-        return new_func
-
-    
-    @staticmethod
-    def check_eclipse_fitting_cosine(func, w1, w2=np.nan):
-        '''
-        Checks if a Gaussian is fitted to the out-of-eclipse variability.
-        '''
-        if 5.6*w1 > 0.5:
-            if np.isnan(w2):
-                new_func = 'CE'
-            else:
-                if 5.6*w2 > 0.5:
-                    new_func = 'CE'
-                else:
-                    new_func = 'refit'
-        else:
-            if np.isnan(w2):
-                new_func = func
-            else:
-                if 5.6*w2 > 0.5:
-                    new_func = 'CGE'
-                else:
-                    new_func = func
-
-        return new_func
-
-
-    def check_fit(self):
-        '''
-        Checks for anomalies in the best fit:
-        - overlapping Gaussians
-        - a Gaussian fitted to noise
-        - a Gaussian fitted to out-of-eclipse variability
-        '''
-
-        best_fit_func = list(self.models.keys())[np.nanargmax(list(self.bics.values()))]
-
-        # CHECK IF TWO GAUSSIANS FIT THE SAME ECLIPSE
-        if best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
-            C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
-            best_fit_func_check = self.check_overlapping_eclipses(best_fit_func, mu1, mu2, sigma1, sigma2)
-            if best_fit_func != best_fit_func_check:
-                # refit with secondary 0.5 away from primary
-                new_mu2 = mu1 + 0.5
-                new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
-                self.fit_twoGaussian_models(init_pos=[mu1, new_mu2], init_widths=[sigma1, 0.01])
-                # check one last time after refitting
-                C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
-                best_fit_func = self.check_overlapping_eclipses(best_fit_func, mu1, mu2, sigma1, sigma2)
-
-        # CHECK IF ANY OF THE ECLIPSES FIT THE DATA NOISE
-        if best_fit_func in ['CG', 'CGE']:
-            C, mu1, d1, sigma1 = self.fits[best_fit_func][0][:4]
-            best_fit_func = self.check_eclipse_fitting_noise(best_fit_func, self.fluxes, self.models[best_fit_func], d1, d2=np.nan)
+    #     # CHECK IF ANY OF THE ECLIPSES FIT THE DATA NOISE
+    #     if best_fit_func in ['CG', 'CGE']:
+    #         C, mu1, d1, sigma1 = self.fits[best_fit_func][0][:4]
+    #         best_fit_func = self.check_eclipse_fitting_noise(best_fit_func, self.fluxes, self.models[best_fit_func], d1, d2=np.nan)
         
-        elif best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
-            C, mu1, d1, sigma1, mu2, d2, sigma2= self.fits[best_fit_func][0][:7]
-            # check if primary fits noise
-            best_fit_func_check = self.check_eclipse_fitting_noise(best_fit_func, self.fluxes, self.models[best_fit_func], d1, d2=d2)
-            if best_fit_func_check == 'refit':
-                # we need to refit such that the secondary eclipse is considered the primary and remove the primary
-                best_fit_func = 'CG' if best_fit_func == 'CG12' else 'CGE'
-                new_mu2 = mu2 + 0.5
-                new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
-                self.fit_twoGaussian_models(init_pos=[mu2, new_mu2], init_widths=[sigma2, 0.])
-            else:
-                best_fit_func = best_fit_func_check
+    #     elif best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
+    #         C, mu1, d1, sigma1, mu2, d2, sigma2= self.fits[best_fit_func][0][:7]
+    #         # check if primary fits noise
+    #         best_fit_func_check = self.check_eclipse_fitting_noise(best_fit_func, self.fluxes, self.models[best_fit_func], d1, d2=d2)
+    #         if best_fit_func_check == 'refit':
+    #             # we need to refit such that the secondary eclipse is considered the primary and remove the primary
+    #             best_fit_func = 'CG' if best_fit_func == 'CG12' else 'CGE'
+    #             new_mu2 = mu2 + 0.5
+    #             new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
+    #             self.fit_twoGaussian_models(init_pos=[mu2, new_mu2], init_widths=[sigma2, 0.])
+    #         else:
+    #             best_fit_func = best_fit_func_check
 
-        # CHECK IF ANY OF THE ECLIPSES FIT THE OUT OF ECLIPSE VARIABILITY
-        if best_fit_func in ['CG', 'CGE']:
-            C, mu1, d1, sigma1 = self.fits[best_fit_func][0][:4]
-            best_fit_func = self.check_eclipse_fitting_cosine(best_fit_func, sigma1)
+    #     # CHECK IF ANY OF THE ECLIPSES FIT THE OUT OF ECLIPSE VARIABILITY
+    #     if best_fit_func in ['CG', 'CGE']:
+    #         C, mu1, d1, sigma1 = self.fits[best_fit_func][0][:4]
+    #         best_fit_func = self.check_eclipse_fitting_cosine(best_fit_func, sigma1)
         
-        elif best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
-            C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
-            # check if primary fits noise
-            best_fit_func_check = self.check_eclipse_fitting_cosine(best_fit_func, sigma1, sigma2)
-            if best_fit_func_check == 'refit':
-                # we need to refit such that the secondary eclipse is considered the primary and remove the primary
-                best_fit_func = 'CGE'
-                new_mu2 = mu2 + 0.5
-                new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
-                self.fit_twoGaussian_models(init_pos=[mu2, new_mu2], init_widths=[sigma2, 0.])
-            else:
-                best_fit_func = best_fit_func_check
+    #     elif best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
+    #         C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
+    #         # check if primary fits noise
+    #         best_fit_func_check = self.check_eclipse_fitting_cosine(best_fit_func, sigma1, sigma2)
+    #         if best_fit_func_check == 'refit':
+    #             # we need to refit such that the secondary eclipse is considered the primary and remove the primary
+    #             best_fit_func = 'CGE'
+    #             new_mu2 = mu2 + 0.5
+    #             new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
+    #             self.fit_twoGaussian_models(init_pos=[mu2, new_mu2], init_widths=[sigma2, 0.])
+    #         else:
+    #             best_fit_func = best_fit_func_check
 
-        return best_fit_func
+    #     return best_fit_func
 
 
     def fit(self):
@@ -213,8 +135,10 @@ class TwoGaussianModel(object):
         # compute corresponding BIC values
         self.compute_twoGaussian_models_BIC()
         
-        best_fit_func = self.check_fit()
+        # best_fit_func = self.check_fit()
         # choose the best fit as the one with highest BIC
+        best_fit_func = list(self.models.keys())[np.nanargmax(list(self.bics.values()))]
+
         self.best_fit = {}
         self.best_fit['func'] = best_fit_func
         self.best_fit['model'] = self.models[best_fit_func]
@@ -388,7 +312,7 @@ class TwoGaussianModel(object):
         return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu, d, sigma)
 
     @staticmethod
-    def cge(phi, C, mu, d, sigma, Aell):
+    def cge(phi, C, mu, d, sigma, Aell, phi0):
         '''
         Constant + Gaussian + ellipsoidal model
 
@@ -414,7 +338,7 @@ class TwoGaussianModel(object):
         y: array-like
             y = const(phi, C) - gsum(phi, mu, d, sigma) - ellipsoidal(phi, Aell, mu)
         '''
-        return TwoGaussianModel.const(phi, C) - TwoGaussianModel.ellipsoidal(phi, Aell, mu) - TwoGaussianModel.gsum(phi, mu, d, sigma)
+        return TwoGaussianModel.const(phi, C) - TwoGaussianModel.ellipsoidal(phi, Aell, phi0) - TwoGaussianModel.gsum(phi, mu, d, sigma)
 
     @staticmethod
     def cg12(phi, C, mu1, d1, sigma1, mu2, d2, sigma2):
@@ -448,7 +372,7 @@ class TwoGaussianModel(object):
         return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2)
 
     @staticmethod
-    def cg12e1(phi, C, mu1, d1, sigma1, mu2, d2, sigma2, Aell):
+    def cg12e(phi, C, mu1, d1, sigma1, mu2, d2, sigma2, Aell, phi0):
         '''
         Constant + two Gaussians + ellipsoidal centered on the primary eclipse
         
@@ -481,43 +405,43 @@ class TwoGaussianModel(object):
         y: array-like
             y = const(phi, C) - gsum(phi, mu1, d1, sigma1) - gsum(phi, mu2, d2, sigma2) - ellipsoidal(phi, Aell, mu1)
         '''
-        return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2) - TwoGaussianModel.ellipsoidal(phi, Aell, mu1)
+        return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2) - TwoGaussianModel.ellipsoidal(phi, Aell, phi0)
 
-    @staticmethod
-    def cg12e2(phi, C, mu1, d1, sigma1, mu2, d2, sigma2, Aell):
-        '''
-        Constant + two Gaussians + ellipsoidal centered on the secondary eclipse
+    # @staticmethod
+    # def cg12e2(phi, C, mu1, d1, sigma1, mu2, d2, sigma2, Aell):
+    #     '''
+    #     Constant + two Gaussians + ellipsoidal centered on the secondary eclipse
         
-        Parameters
-        ----------
-        phi: float or array-like
-            The input phase or phases array to compute the model in
-        C: float
-            value of the constant
-        mu1: float
-            Position of the first Gaussian
-        d1: float
-            Amplitude of the first Gaussian
-        sigma1: float
-            Scale (FWHM) of the first Gaussian
-        mu2: float
-            Position of the second Gaussian
-        d2: float
-            Amplitude of the second Gaussian
-        sigma2: float
-            Scale (FWHM) of the second Gaussian
-        Aell: float
-            Amplitude of the elliposoidal
-        phi0: float
-            Phase-point to center the elliposoidal on (position of primary or secondary eclipse)
+    #     Parameters
+    #     ----------
+    #     phi: float or array-like
+    #         The input phase or phases array to compute the model in
+    #     C: float
+    #         value of the constant
+    #     mu1: float
+    #         Position of the first Gaussian
+    #     d1: float
+    #         Amplitude of the first Gaussian
+    #     sigma1: float
+    #         Scale (FWHM) of the first Gaussian
+    #     mu2: float
+    #         Position of the second Gaussian
+    #     d2: float
+    #         Amplitude of the second Gaussian
+    #     sigma2: float
+    #         Scale (FWHM) of the second Gaussian
+    #     Aell: float
+    #         Amplitude of the elliposoidal
+    #     phi0: float
+    #         Phase-point to center the elliposoidal on (position of primary or secondary eclipse)
 
 
-        Returns
-        -------
-        y: array-like
-            y = const(phi, C) - gsum(phi, mu1, d1, sigma1) - gsum(phi, mu2, d2, sigma2) - ellipsoidal(phi, Aell, mu2)
-        '''
-        return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2) - TwoGaussianModel.ellipsoidal(phi, Aell, mu2)
+    #     Returns
+    #     -------
+    #     y: array-like
+    #         y = const(phi, C) - gsum(phi, mu1, d1, sigma1) - gsum(phi, mu2, d2, sigma2) - ellipsoidal(phi, Aell, mu2)
+    #     '''
+    #     return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2) - TwoGaussianModel.ellipsoidal(phi, Aell, mu2)
 
 
     @staticmethod
@@ -607,14 +531,14 @@ class TwoGaussianModel(object):
         d10 = self.fluxes.max()-self.fluxes[np.argmin(np.abs(self.phases-mu10))]
         d20 = self.fluxes.max()-self.fluxes[np.argmin(np.abs(self.phases-mu20))]
         Aell0 = 0.001
+        phi0 = 0.0
 
         init_params = {'C': [C0,],
-            'CE': [C0, Aell0, mu10],
+            'CE': [C0, Aell0, phi0],
             'CG': [C0, mu10, d10, sigma10],
-            'CGE': [C0, mu10, d10, sigma10, Aell0],
+            'CGE': [C0, mu10, d10, sigma10, Aell0, phi0],
             'CG12': [C0, mu10, d10, sigma10, mu20, d20, sigma20],
-            'CG12E1': [C0, mu10, d10, sigma10, mu20, d20, sigma20, Aell0],
-            'CG12E2': [C0, mu10, d10, sigma10, mu20, d20, sigma20, Aell0]}
+            'CG12E': [C0, mu10, d10, sigma10, mu20, d20, sigma20, Aell0, phi0]}
 
         # parameters used frequently for bounds
         fmax = self.fluxes.max()
@@ -624,10 +548,9 @@ class TwoGaussianModel(object):
         bounds = {'C': ((0),(fmax)),
             'CE': ((0, 1e-6, -0.5),(fmax, fdiff, 0.5)),
             'CG': ((0., -0.5, 0., 0.), (fmax, 0.5, fdiff, 0.5)),
-            'CGE': ((0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, fdiff)),
+            'CGE': ((0., -0.5, 0., 0., 1e-6, -0.5),(fmax, 0.5, fdiff, 0.5, fdiff, 0.5)),
             'CG12': ((0.,-0.5, 0., 0., -0.5, 0., 0.),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5)),
-            'CG12E1': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff)),
-            'CG12E2': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff))}
+            'CG12E': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6, -0.5),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff, 0.5))}
 
         fits = {}
 
@@ -661,7 +584,7 @@ class TwoGaussianModel(object):
         Computes the BIC value of each model light curve.
         '''
         bics = {}
-        nparams = {'C':1, 'CE':3, 'CG':4, 'CGE':5, 'CG12':7, 'CG12E1':8, 'CG12E2':8}
+        nparams = {'C':1, 'CE':3, 'CG':4, 'CGE':6, 'CG12':7, 'CG12E':9}
 
         for mkey in self.models.keys():
             bics[mkey] = self.bic(self.models[mkey], nparams[mkey])

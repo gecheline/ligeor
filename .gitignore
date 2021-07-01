@@ -6,3 +6,5 @@ build/
 dist/
 
 ligeor.egg-info/
+
+test_notebooks/.ipynb_checkpoints/

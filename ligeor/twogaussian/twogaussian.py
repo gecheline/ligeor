@@ -704,7 +704,37 @@ class TwoGaussianModel(object):
 
 
     def compute_residuals_stdev(self):
-        return NotImplementedError
+        self.residuals_mean = np.mean((self.fluxes - self.best_fit['model']))
+        self.residuals_stdev = np.std((self.fluxes - self.best_fit['model']))
+        return self.residuals_mean, self.residuals_stdev
 
     def compute_eclipse_area(self, ecl=1):
+        if hasattr(self, 'eclipse_area'):
+            pass
+        else:
+            self.eclipse_area = {}
+
+        mu_ind = self.best_fit['param_names'].index('mu%i' % ecl)
+        sigma_ind = self.best_fit['param_names'].index('sigma%i' % ecl)
+        d_ind = self.best_fit['param_names'].index('d%i' % ecl)
+        print(mu_ind, sigma_ind, d_ind)
+
+        mu = self.best_fit['param_vals'][0][mu_ind]
+        sigma = self.best_fit['param_vals'][0][sigma_ind]
+        d = self.best_fit['param_vals'][0][d_ind]
+
+        if np.isnan(mu) or np.isnan(sigma) or np.isnan(d):
+            self.eclipse_area[ecl] = np.nan
+            return np.nan
+        else:
+            from scipy import special
+            phi_top = mu + 2.8*sigma
+            phi_bottom = mu - 2.8*sigma
+            integral_top = special.erf((phi_top - mu)/(np.sqrt(2)*sigma))
+            integral_bottom = special.erf((phi_bottom - mu)/(np.sqrt(2)*sigma))
+            self.eclipse_area[ecl] = np.sqrt(np.pi/2)*d*sigma*(integral_top-integral_bottom)
+            return self.eclipse_area[ecl]
+
+
+
         return NotImplementedError

@@ -469,6 +469,26 @@ class TwoGaussianModel(object):
 
     @staticmethod
     def find_eclipse(phases, fluxes):
+        '''
+        Determines the position and estimated width of the deepest eclipse.
+
+        Parameters
+        ----------
+        phases: array-like
+            Input phases of the light curve
+        fluxes: array-like
+            Input fluxes of the light curve
+
+        Returns
+        -------
+        phase_min: float
+            Position of the deepest eclipse in phase space
+        edge_left: float
+            Left edge of the eclipse in phase space
+        edge_right: float
+            Right edge of the eclipse in phase space
+        '''
+
         phase_min = phases[np.nanargmin(fluxes)]
         ph_cross = phases[fluxes - np.nanmedian(fluxes) > 0]
         # this part looks really complicated but it really only accounts for eclipses split
@@ -492,6 +512,25 @@ class TwoGaussianModel(object):
 
     @staticmethod
     def estimate_eclipse_positions_widths(phases, fluxes, diagnose_init=False):
+        '''
+        Determines the positions and widths of the eclipses in a light curve.
+
+        Parameters
+        ----------
+        phases: array-like
+            Input phases of the light curve
+        fluxes: array-like
+            Input fluxes of the light curve
+        diagnose_init: bool
+            If True, will plot the light curve with the position and width estimates.
+
+        Returns
+        -------
+        estimates: dict
+            A dictionary with keys 'ecl_positions' and 'ecl_widths' corresponding
+            to lists of len 2 of the initial estimated values for each eclipse.
+        '''
+        
         pos1, edge1l, edge1r = TwoGaussianModel.find_eclipse(phases, fluxes)
         fluxes_sec = fluxes.copy()
         fluxes_sec[((phases > edge1l) & (phases < edge1r)) | ((phases > edge1l+1) | (phases < edge1r-1))] = np.nan
@@ -600,7 +639,7 @@ class TwoGaussianModel(object):
         The eclipse parameters are computed following the prescription
         in Mowlavi et al. (2017):
         - eclipse positions are set to the Gaussian positions
-        - eclipse withs are 5.6 times the Gaussian FWHMs
+        - eclipse widths are 5.6 times the Gaussian FWHMs
         - eclipse depths are the constant factor minus the value of 
         the model at the eclipse positions
 
@@ -691,8 +730,7 @@ class TwoGaussianModel(object):
             
             eclipse_edges = [ecl1_l, ecl1_r, ecl2_l, ecl2_r]
 
-
-        return {
+        self.eclipse_params = {
             'primary_width': width1,
             'secondary_width': width2,
             'primary_position': pos1,
@@ -702,13 +740,42 @@ class TwoGaussianModel(object):
             'eclipse_edges': eclipse_edges
         }
 
+        return self.eclipse_params
+
 
     def compute_residuals_stdev(self):
+        '''
+        Computes the residuals of the input fluxes and best fit model
+
+        Returns
+        -------
+        residuals_mean: float
+            The mean of the residuals
+        residuals_stdev: float
+            The standard deviation of the residuals
+        '''
         self.residuals_mean = np.mean((self.fluxes - self.best_fit['model']))
         self.residuals_stdev = np.std((self.fluxes - self.best_fit['model']))
         return self.residuals_mean, self.residuals_stdev
 
     def compute_eclipse_area(self, ecl=1):
+        '''
+        Computes the area under an eclipse.
+
+        An eclipse is defined as being positioned at the Gaussian postion (mu),
+        with a depth corresponding to the Gaussian amplitude (d) and width of 5.6*sigma.
+
+        Parameters
+        ----------
+        ecl: int
+            The eclipse whose area is to be computed (1 or 2)
+        
+        Returns
+        -------
+        eclipse_area: float
+            The computed area under the chosen eclipse.
+        '''
+
         if hasattr(self, 'eclipse_area'):
             pass
         else:
@@ -734,7 +801,3 @@ class TwoGaussianModel(object):
             integral_bottom = special.erf((phi_bottom - mu)/(np.sqrt(2)*sigma))
             self.eclipse_area[ecl] = np.sqrt(np.pi/2)*d*sigma*(integral_top-integral_bottom)
             return self.eclipse_area[ecl]
-
-
-
-        return NotImplementedError

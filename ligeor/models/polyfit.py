@@ -1,15 +1,16 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from operator import itemgetter
 from itertools import groupby
 from numpy.core.fromnumeric import mean
 from scipy.optimize import minimize
-from ligeor.utils.lcutils import load_lc
+from ligeor.utils.lcutils import *
+from ligeor.models import Model
 
 
-class Polyfit(object):
+class Polyfit(Model):
 
-    def __init__(self, filename='', phases=None, fluxes=None, sigmas=None, n_downsample=0,
+    def __init__(self, filename='', phases=[], fluxes=[], sigmas=[], n_downsample=1, usecols=[0,1,2], delimiter=',',
+                        phase_folded=True, period=1, t0=0,
                         xmin=-0.5, xmax=0.5, polyorder=2, chain_length=4):
         '''
         Initializes a polyfit with data and fit parameters.
@@ -42,19 +43,8 @@ class Polyfit(object):
             raise NotImplemented('chain_length != 4 is not yet implemented.')
 
 
-        if phases == None or fluxes == None:
-            try:
-                lc = load_lc(filename, n_downsample=n_downsample)
-                self.phases = lc['phases']
-                self.fluxes = lc['fluxes']
-                self.sigmas = lc['sigmas']
-            except Exception as e:
-                raise ValueError(f'Loading light curve failed with exception {e}')
-        else:
-            self.filename = filename
-            self.phases = phases 
-            self.fluxes = fluxes 
-            self.sigmas = sigmas
+        super(Polyfit, self).__init__(phases, fluxes, sigmas, filename, n_downsample, usecols, delimiter, phase_folded, period, t0)
+
 
         # for now, build a data attribute to match the Polychain methods
         self.data = np.array([self.phases, self.fluxes, self.sigmas]).T
@@ -63,7 +53,7 @@ class Polyfit(object):
         self.xmax = xmax
         self.polyorder = polyorder
         self.chain_length = chain_length
-        self.sdata = self.data[self.data[:,0].argsort()]
+        self.sdata = self.data.copy()#[self.data[:,0].argsort()]
 
         
     def _find_knots(self, min_chain_length=8, verbose=False):
@@ -82,7 +72,7 @@ class Polyfit(object):
         elif len(chains) == 2:
             self.knots = np.sort((self.sdata[chains[0][0],0], self.sdata[chains[0][-1],0], self.sdata[chains[1][0],0], self.sdata[chains[1][-1],0]))
         else:
-            lengths = np.array([len(chain) in chains])
+            lengths = np.array([len(chain) for chain in chains])
             l = np.argsort(lengths)[::-1]
             self.knots = np.sort((self.sdata[chains[l[0]][0],0], self.sdata[chains[l[0]][-1],0], self.sdata[chains[l[1]][0],0], self.sdata[chains[l[1]][-1],0]))
 
@@ -99,27 +89,46 @@ class Polyfit(object):
 
 
     def _build_A_matrix(self, knots, segs):
-        self.A = np.zeros(shape=(len(self.sdata), 9))
+        self.A = np.zeros(shape=(len(self.sdata), 8))
 
+        # segment 1:
         self.A[:segs[0],0] = self.sdata[:segs[0],0]**2
-        self.A[segs[0]:,0] = knots[1]**2
         self.A[:segs[0],1] = self.sdata[:segs[0],0]
-        self.A[segs[0]:,1] = knots[1]
-        self.A[:,2] = 1.0
+        self.A[:segs[0],2] = 1.0
 
-        for k in range(3):
-            self.A[segs[k]:segs[k+1],3+2*k] = self.sdata[segs[k]:segs[k+1],0]**2-knots[k+1]**2
-            self.A[segs[k]:segs[k+1],4+2*k] = self.sdata[segs[k]:segs[k+1],0]-knots[k+1]
-            for j in range(k):
-                self.A[segs[k]:segs[k+1],3+2*j] = knots[j+2]**2-knots[j+1]**2
-                self.A[segs[k]:segs[k+1],4+2*j] = knots[j+2]-knots[j+1]
+        # segment 2:
+        self.A[segs[0]:segs[1],0] = knots[1]**2
+        self.A[segs[0]:segs[1],1] = knots[1]
+        self.A[segs[0]:segs[1],2] = 1.0
+        self.A[segs[0]:segs[1],3] = self.sdata[segs[0]:segs[1],0]**2-knots[1]**2
+        self.A[segs[0]:segs[1],4] = self.sdata[segs[0]:segs[1],0]-knots[1]
 
-        return self.A
+        # segment 3:
+        self.A[segs[1]:segs[2],0] = knots[1]**2
+        self.A[segs[1]:segs[2],1] = knots[1]
+        self.A[segs[1]:segs[2],2] = 1.0
+        self.A[segs[1]:segs[2],3] = knots[2]**2-knots[1]**2
+        self.A[segs[1]:segs[2],4] = knots[2]-knots[1]
+        self.A[segs[1]:segs[2],5] = self.sdata[segs[1]:segs[2],0]**2-knots[2]**2
+        self.A[segs[1]:segs[2],6] = self.sdata[segs[1]:segs[2],0]-knots[2]
+
+        # segment 4:
+        x = (self.sdata[segs[2]:segs[3],0]-knots[3])/(knots[3]-knots[0]-1)
+        self.A[segs[2]:segs[3],0] = knots[1]**2 + x*(knots[1]**2-knots[0]**2)
+        self.A[segs[2]:segs[3],1] = knots[1] + x*(knots[1]-knots[0])
+        self.A[segs[2]:segs[3],2] = 1.0
+        self.A[segs[2]:segs[3],3] = knots[2]**2-knots[1]**2 + x*(knots[2]**2-knots[1]**2)
+        self.A[segs[2]:segs[3],4] = knots[2]-knots[1] + x*(knots[2]-knots[1])
+        self.A[segs[2]:segs[3],5] = knots[3]**2-knots[2]**2 + x*(knots[3]**2-knots[2]**2)
+        self.A[segs[2]:segs[3],6] = knots[3]-knots[2] + x*(knots[3]-knots[2])
+        self.A[segs[2]:segs[3],7] = self.sdata[segs[2]:segs[3],0]**2-knots[3]**2 + x*((knots[0]+1)**2-knots[3]**2)
     
 
     def _fit_chain(self, knots, min_pts_per_segment=5, return_ck=False):
         segs = self._find_segments(knots)
         if np.ediff1d(segs).min() < min_pts_per_segment:
+            return 1e10
+        if np.any(knots < self.xmin):# or np.any(knots > self.xmax):
             return 1e10
 
         A = self._build_A_matrix(knots, segs)
@@ -134,15 +143,16 @@ class Polyfit(object):
         c0 = ck[2]
         c1 = (ck[0]-ck[3])*self.knots[1]**2 + (ck[1]-ck[4])*self.knots[1] + c0
         c2 = (ck[3]-ck[5])*self.knots[2]**2 + (ck[4]-ck[6])*self.knots[2] + c1
-        c3 = (ck[5]-ck[7])*self.knots[3]**2 + (ck[6]-ck[8])*self.knots[3] + c2
+        b3 = 1./(self.knots[3]-self.knots[0]-1)*(ck[0]*(self.knots[1]**2-self.knots[0]**2)+ck[3]*(self.knots[2]**2-self.knots[1]**2)+ck[5]*(self.knots[3]**2-self.knots[2]**2)+ck[7]*((self.knots[0]+1)**2-self.knots[3]**2)+ck[1]*(self.knots[1]-self.knots[0])+ck[4]*(self.knots[2]-self.knots[1])+ck[6]*(self.knots[3]-self.knots[2]))
+        c3 = (ck[5]-ck[7])*self.knots[3]**2 + (ck[6]-b3)*self.knots[3] + c2
 
         if verbose:
             print(f'segment 1:\n {self.knots[0]} < x <= {self.knots[1]}, a0={ck[0]} b0={ck[1]} c0={c0}')
-            print(f'segment 2:\n {self.knots[1]} < x <= {self.knots[2]}, a0={ck[3]} b0={ck[4]} c0={c1}')
-            print(f'segment 3:\n {self.knots[2]} < x <= {self.knots[3]}, a0={ck[5]} b0={ck[6]} c0={c2}')
-            print(f'segment 4:\n {self.knots[3]} < x <= {self.knots[0]+1}, a0={ck[7]} b0={ck[8]} c0={c3}')
+            print(f'segment 2:\n {self.knots[1]} < x <= {self.knots[2]}, a1={ck[3]} b1={ck[4]} c1={c1}')
+            print(f'segment 3:\n {self.knots[2]} < x <= {self.knots[3]}, a2={ck[5]} b2={ck[6]} c2={c2}')
+            print(f'segment 4:\n {self.knots[3]} < x <= {self.knots[0]+1}, a3={ck[7]} b3={b3} c3={c3}')
 
-        self.coeffs = ((ck[0], ck[1], c0), (ck[3], ck[4], c1), (ck[5], ck[6], c2), (ck[7], ck[8], c3))
+        self.coeffs = ((ck[0], ck[1], c0), (ck[3], ck[4], c1), (ck[5], ck[6], c2), (ck[7], b3, c3))
     
 
     def _chain_extremes(self):
@@ -200,6 +210,8 @@ class Polyfit(object):
 
 
     def plot(self, x):
+        import matplotlib.pyplot as plt
+
         if x is None:
             x = self.sdata[:,0]
     
@@ -210,39 +222,20 @@ class Polyfit(object):
         d = self._remap(d)
         self._remap(self.extremes)
 
-        plt.plot(self.data[:,0], self.data[:,1], 'b.')
+        # knots = self._remap(self.knots.copy())
+        # knot_fvs = self.fv(self.knots)
+
+        plt.plot(self.sdata[:,0], self.sdata[:,1], 'b.')
+        # plt.plot(knots, knot_fvs, 'ms')
+        plt.plot(self.knots, self.fv(self.knots), 'ms')
         plt.plot(d[:,0], d[:,1], 'r-')
 
         for k in range(4):
             plt.axvline(self.extremes[:,0][k], ls='--')
         plt.show()
 
-    # def save_model(self, knots, nbins=1000, niters=0, save_file=''):
-    #     '''
-    #     Saves a model light curve, given the knot positions, to a file.
-        
-    #     Parameters
-    #     ----------
-    #     knots: array-like
-    #         The knot positions for the polyfit.
-    #     niters: int
-    #         Number of iterations for polyfit. Default in this case is 0 to use
-    #         the user-provided knots and avoid refitting.
-    #     nbins: int
-    #         Number of phase bins for the polyfit model to be computed in.
-    #     save_model_file: str
-    #         Filename to save the model to.
-    #     '''
 
-    #     temp = tempfile.NamedTemporaryFile(mode='w+t', suffix=".lc")
-    #     np.savetxt(temp.name, np.array([self.phases, self.fluxes, self.sigmas]).T)
-
-    #     if len(save_file) == 0:
-    #         save_file = self.filename + '.pf'
-    #     proc = subprocess.Popen([f'polyfit -k {knots} -n {nbins} -i {niters} {temp.name} > {save_file}'], stdout=subprocess.PIPE, shell=True) #% (knots, nbins, nitera temp.name, save_file)]
-    #     temp.close()
-
-    def compute_eclipse_params(self):
+    def compute_eclipse_params(self, interactive=False):
         '''
         Compute the positions, widths and depths of the eclipses 
         based on the polyfit solution.
@@ -281,25 +274,15 @@ class Polyfit(object):
             'eclipse_edges': np.hstack((knots1, knots2)),
             'eclipse_coeffs': [self.coeffs[eclipse_args[0]], self.coeffs[eclipse_args[1]]]
         }
-        
+
+
+        if interactive:
+           self.interactive_eclipse()
+
+
+        self.check_eclipses_credibility()
         return self.eclipse_params
         
-
-    def compute_residuals_stdev(self):
-        '''
-        Computes the residuals of the input fluxes and best fit model
-
-        Returns
-        -------
-        residuals_mean: float
-            The mean of the residuals
-        residuals_stdev: float
-            The standard deviation of the residuals
-        '''
-
-        self.residuals_mean = np.mean((self.fluxes - self.model))
-        self.residuals_stdev = np.std((self.fluxes - self.model))
-        return self.residuals_mean, self.residuals_stdev
 
     def compute_eclipse_area(self, ecl=1):
         '''

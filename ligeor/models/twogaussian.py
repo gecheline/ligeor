@@ -1,11 +1,13 @@
 import numpy as np
 from scipy.optimize import curve_fit
 from ligeor.utils.lcutils import *
+from ligeor.models import Model
 
 
-class TwoGaussianModel(object):
+class TwoGaussianModel(Model):
 
-    def __init__(self, phases=[], fluxes=[], sigmas=[], filename='', n_downsample=1, usecols=(0,1,2), delimiter=','):
+    def __init__(self, phases=[], fluxes=[], sigmas=[], filename='', 
+                n_downsample=1, usecols=(0,1,2), delimiter=',', phase_folded=True, period=1, t0=0):
         '''
         Computes the two-Gaussian model light curves of the input data.
 
@@ -25,19 +27,7 @@ class TwoGaussianModel(object):
             Indices of the phases, fluxes and sigmas columns in file.
         '''
 
-        if len(phases) == 0 or len(fluxes) == []:
-            try:
-                lc = load_lc(filename, n_downsample=n_downsample, phase_folded=True, usecols=usecols, delimiter=delimiter)
-                self.phases = lc['phases']
-                self.fluxes = lc['fluxes']
-                self.sigmas = lc['sigmas']
-            except Exception as e:
-                raise ValueError(f'Loading light curve failed with exception {e}')
-        else:
-            self.filename = filename
-            self.phases = phases 
-            self.fluxes = fluxes 
-            self.sigmas = sigmas
+        super(TwoGaussianModel, self).__init__(phases, fluxes, sigmas, filename, n_downsample, usecols, delimiter, phase_folded, period, t0)
 
         # this is just all the parameter names for each model
         self.twogfuncs = {'C': TwoGaussianModel.const, 
@@ -56,67 +46,7 @@ class TwoGaussianModel(object):
                 'CG12E': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell', 'phi0']}
 
 
-    # def check_fit(self):
-    #     '''
-    #     Checks for anomalies in the best fit:
-    #     - overlapping Gaussians
-    #     - a Gaussian fitted to noise
-    #     - a Gaussian fitted to out-of-eclipse variability
-    #     '''
-
-    #     best_fit_func = list(self.models.keys())[np.nanargmax(list(self.bics.values()))]
-
-    #     # CHECK IF TWO GAUSSIANS FIT THE SAME ECLIPSE
-    #     if best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
-    #         C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
-    #         best_fit_func_check = self.check_overlapping_eclipses(best_fit_func, mu1, mu2, sigma1, sigma2)
-    #         if best_fit_func != best_fit_func_check:
-    #             # refit with secondary 0.5 away from primary
-    #             new_mu2 = mu1 + 0.5
-    #             new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
-    #             self.fit_twoGaussian_models(init_pos=[mu1, new_mu2], init_widths=[sigma1, 0.01])
-    #             # check one last time after refitting
-    #             C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
-    #             best_fit_func = self.check_overlapping_eclipses(best_fit_func, mu1, mu2, sigma1, sigma2)
-
-    #     # CHECK IF ANY OF THE ECLIPSES FIT THE DATA NOISE
-    #     if best_fit_func in ['CG', 'CGE']:
-    #         C, mu1, d1, sigma1 = self.fits[best_fit_func][0][:4]
-    #         best_fit_func = self.check_eclipse_fitting_noise(best_fit_func, self.fluxes, self.models[best_fit_func], d1, d2=np.nan)
-        
-    #     elif best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
-    #         C, mu1, d1, sigma1, mu2, d2, sigma2= self.fits[best_fit_func][0][:7]
-    #         # check if primary fits noise
-    #         best_fit_func_check = self.check_eclipse_fitting_noise(best_fit_func, self.fluxes, self.models[best_fit_func], d1, d2=d2)
-    #         if best_fit_func_check == 'refit':
-    #             # we need to refit such that the secondary eclipse is considered the primary and remove the primary
-    #             best_fit_func = 'CG' if best_fit_func == 'CG12' else 'CGE'
-    #             new_mu2 = mu2 + 0.5
-    #             new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
-    #             self.fit_twoGaussian_models(init_pos=[mu2, new_mu2], init_widths=[sigma2, 0.])
-    #         else:
-    #             best_fit_func = best_fit_func_check
-
-    #     # CHECK IF ANY OF THE ECLIPSES FIT THE OUT OF ECLIPSE VARIABILITY
-    #     if best_fit_func in ['CG', 'CGE']:
-    #         C, mu1, d1, sigma1 = self.fits[best_fit_func][0][:4]
-    #         best_fit_func = self.check_eclipse_fitting_cosine(best_fit_func, sigma1)
-        
-    #     elif best_fit_func in ['CG12', 'CG12E1', 'CG12E2']:
-    #         C, mu1, d1, sigma1, mu2, d2, sigma2 = self.fits[best_fit_func][0][:7]
-    #         # check if primary fits noise
-    #         best_fit_func_check = self.check_eclipse_fitting_cosine(best_fit_func, sigma1, sigma2)
-    #         if best_fit_func_check == 'refit':
-    #             # we need to refit such that the secondary eclipse is considered the primary and remove the primary
-    #             best_fit_func = 'CGE'
-    #             new_mu2 = mu2 + 0.5
-    #             new_mu2 = new_mu2 - 1 if new_mu2 > 0.5 else new_mu2
-    #             self.fit_twoGaussian_models(init_pos=[mu2, new_mu2], init_widths=[sigma2, 0.])
-    #         else:
-    #             best_fit_func = best_fit_func_check
-
-    #     return best_fit_func
-
+  
 
     def fit(self):
         '''
@@ -144,6 +74,7 @@ class TwoGaussianModel(object):
         self.best_fit['model'] = self.models[best_fit_func]
         self.best_fit['param_vals'] = self.fits[best_fit_func]
         self.best_fit['param_names'] = self.params[best_fit_func]
+        self.model = self.best_fit['model']
 
 
     def save_model(self, nbins=1000, func='', param_values = [], save_file=''):
@@ -567,6 +498,12 @@ class TwoGaussianModel(object):
         else:
             mu10, mu20 = init_pos
             sigma10, sigma20 = init_widths
+
+        # check if the initial estimates for the eclipses are overlapping
+        if np.abs(mu20-mu10) < 5.6*sigma10 or np.abs(mu20-mu10) < 5.6*sigma20:
+            mu20 = mu10 + 0.5
+            mu20 = mu20 - 1 if mu20 > 0.5 else mu20
+
         d10 = self.fluxes.max()-self.fluxes[np.argmin(np.abs(self.phases-mu10))]
         d20 = self.fluxes.max()-self.fluxes[np.argmin(np.abs(self.phases-mu20))]
         Aell0 = 0.001
@@ -654,6 +591,7 @@ class TwoGaussianModel(object):
         results: dict
             A dictionary of the eclipse paramter values.
         '''
+
         param_vals = self.best_fit['param_vals'][0]
         param_names = self.best_fit['param_names']
 
@@ -682,53 +620,23 @@ class TwoGaussianModel(object):
             width2 = np.nan
             depth2 = np.nan
 
+
         # compute the eclipse edges using the positons and widths
         eclipse_edges = [pos1 - 0.5*width1, pos1+0.5*width1, pos2-0.5*width2, pos2+0.5*width2]
 
-
-        if interactive:
-            # this option allows the user to manually adjust the eclipse positions
-            # and edges and recompute the eclipse parameters
-
-            from ligeor.utils.interactive import DraggableLine
-            phases_w, fluxes_w, sigmas_w = extend_phasefolded_lc(self.phases, self.fluxes, self.sigmas)
-            [ecl1_l, ecl1_r, ecl2_l, ecl2_r] = eclipse_edges
-
-            import matplotlib.pyplot as plt
-            fig = plt.figure(figsize=(10,8))
-            ax = fig.add_subplot(111)
-            ax.plot(phases_w, fluxes_w, 'k.')
-            plt.plot(phases_w, self.twogfuncs[self.best_fit](phases_w, *self.fits[self.best_fit][0]), '-', label=self.best_fit)
-            lines = []
-            lines.append(ax.axvline(x=pos1, c='#2B71B1', lw=2, label='primary'))
-            lines.append(ax.axvline(x=pos2, c='#FF702F', lw=2, label='secondary'))
-            lines.append(ax.axvline(x=ecl1_l, c='#2B71B1', lw=2, ls='--'))
-            lines.append(ax.axvline(x=ecl1_r, c='#2B71B1', lw=2, ls='--'))
-            lines.append(ax.axvline(x=ecl2_l, c='#FF702F', lw=2, ls='--'))
-            lines.append(ax.axvline(x=ecl2_r, c='#FF702F', lw=2, ls='--'))
-            drs = []
-            for l,label in zip(lines,['pos1', 'pos2', 'ecl1_l', 'ecl1_r', 'ecl2_l', 'ecl2_r']):   
-                dr = DraggableLine(l)
-                dr.label = label
-                dr.connect()   
-                drs.append(dr) 
-            ax.legend()
-            plt.show(block=True)
-
-            print('adjusting values')
-
-            pos1 = drs[0].point.get_xdata()[0]
-            pos2 = drs[1].point.get_xdata()[0]
-            ecl1_l = drs[2].point.get_xdata()[0]
-            ecl1_r = drs[3].point.get_xdata()[0]
-            ecl2_l = drs[4].point.get_xdata()[0]
-            ecl2_r = drs[5].point.get_xdata()[0]
-            width1 = ecl1_r - ecl1_l
-            width2 = ecl2_r - ecl2_l
-            depth1 = C - self.fluxes[np.argmin(np.abs(self.phases-pos1))]
-            depth2 = C - self.fluxes[np.argmin(np.abs(self.phases-pos2))]
-            
-            eclipse_edges = [ecl1_l, ecl1_r, ecl2_l, ecl2_r]
+        # check if the resulting eclipses are overlapping:
+        if np.abs(pos2-pos1) < width1 or np.abs(pos2-pos1) < width2:
+            # keep only the deeper eclipse
+            if depth1 > depth2:
+                pos1, pos2 = pos1, np.nan 
+                width1, width2 = width1, np.nan 
+                depth1, depth2 = depth1, np.nan
+                eclipse_edges = [eclipse_edges[0], eclipse_edges[1], np.nan, np.nan]
+            else:
+                pos1, pos2 = pos2, np.nan 
+                width1, width2 = width2, np.nan 
+                depth1, depth2 = depth2, np.nan
+                eclipse_edges = [eclipse_edges[2], eclipse_edges[3], np.nan, np.nan]
 
         self.eclipse_params = {
             'primary_width': width1,
@@ -740,23 +648,48 @@ class TwoGaussianModel(object):
             'eclipse_edges': eclipse_edges
         }
 
+        if interactive:
+           self.interactive_eclipse()
+
+        self.check_eclipses_credibility()
         return self.eclipse_params
 
-
-    def compute_residuals_stdev(self):
+    @staticmethod
+    def compute_gaussian_area(mu, sigma, d, xmin, xmax):
         '''
-        Computes the residuals of the input fluxes and best fit model
+        Computes the area under an eclipse.
 
+        The area is limited to an x-range of of [-2.8*sigma, 2.8*sigma] to correspond to
+        the definition of an eclipse width of 5.6*.
+
+        Parameters
+        ----------
+        mu: float
+            Position (mean) of the Gaussian
+        sigma: float
+            Standard deviation of the Gaussian
+        d: float
+            Depth (amplitude) of the Gaussian
+        xmin: float
+            Bottom integral boundary
+        xmax: float
+            Top integral boundary
+        
         Returns
         -------
-        residuals_mean: float
-            The mean of the residuals
-        residuals_stdev: float
-            The standard deviation of the residuals
+        area: float
+            The computed area under the Gaussian.
+
         '''
-        self.residuals_mean = np.mean((self.fluxes - self.best_fit['model']))
-        self.residuals_stdev = np.std((self.fluxes - self.best_fit['model']))
-        return self.residuals_mean, self.residuals_stdev
+        if np.isnan(mu) or np.isnan(sigma) or np.isnan(d):
+            return np.nan
+        else:
+            from scipy import special
+
+            integral_top = special.erf((xmax - mu)/(np.sqrt(2)*sigma))
+            integral_bottom = special.erf((xmin - mu)/(np.sqrt(2)*sigma))
+            return np.sqrt(np.pi/2)*d*sigma*(integral_top-integral_bottom)
+
 
     def compute_eclipse_area(self, ecl=1):
         '''
@@ -769,11 +702,7 @@ class TwoGaussianModel(object):
         ----------
         ecl: int
             The eclipse whose area is to be computed (1 or 2)
-        
-        Returns
-        -------
-        eclipse_area: float
-            The computed area under the chosen eclipse.
+
         '''
 
         if hasattr(self, 'eclipse_area'):
@@ -784,20 +713,11 @@ class TwoGaussianModel(object):
         mu_ind = self.best_fit['param_names'].index('mu%i' % ecl)
         sigma_ind = self.best_fit['param_names'].index('sigma%i' % ecl)
         d_ind = self.best_fit['param_names'].index('d%i' % ecl)
-        print(mu_ind, sigma_ind, d_ind)
-
+        
         mu = self.best_fit['param_vals'][0][mu_ind]
         sigma = self.best_fit['param_vals'][0][sigma_ind]
         d = self.best_fit['param_vals'][0][d_ind]
+        phi_top = mu + 2.8*sigma
+        phi_bottom = mu - 2.8*sigma
 
-        if np.isnan(mu) or np.isnan(sigma) or np.isnan(d):
-            self.eclipse_area[ecl] = np.nan
-            return np.nan
-        else:
-            from scipy import special
-            phi_top = mu + 2.8*sigma
-            phi_bottom = mu - 2.8*sigma
-            integral_top = special.erf((phi_top - mu)/(np.sqrt(2)*sigma))
-            integral_bottom = special.erf((phi_bottom - mu)/(np.sqrt(2)*sigma))
-            self.eclipse_area[ecl] = np.sqrt(np.pi/2)*d*sigma*(integral_top-integral_bottom)
-            return self.eclipse_area[ecl]
+        self.eclipse_area[ecl] = TwoGaussianModel.compute_gaussian_area_gaussian(mu, sigma, d, phi_top, phi_bottom)

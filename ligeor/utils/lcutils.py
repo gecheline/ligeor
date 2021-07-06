@@ -103,33 +103,45 @@ def extend_phasefolded_lc(phases, fluxes, sigmas):
     return phases_extend, fluxes_extend, sigmas_extend
 
 
-def check_overlapping_eclipses(mu1, mu2, sigma1, sigma2):
-    '''
-    Checks if the two Gaussians fit the same eclipse.
-    '''
-    if np.abs(mu2-mu1) < 5.6*sigma1 or np.abs(mu2-mu1) < 5.6*sigma2:
-        return True
-    else:
-        return False
-
-
-def check_eclipse_fitting_noise(fluxes_model, fluxes_obs, d):
+def check_eclipse_fitting_noise(fluxes_model, fluxes_obs, depth):
     '''
     Checks if the model eclipses are true or fit data noise features.
     '''
 
     sigma_res = np.std(fluxes_obs - fluxes_model)
-    if d <= 3*sigma_res:
+    if depth <= sigma_res:
         return True
     else:
         return False
 
 
-def check_eclipse_fitting_cosine(w):
+def check_eclipse_fitting_cosine(width):
     '''
-    Checks if a Gaussian is fitted to the out-of-eclipse variability.
+    Checks if an eclipse is fitted to the out-of-eclipse variability.
     '''
-    if 5.6*w > 0.5:
+    if width > 0.5:
         return True
     else:
         return False
+
+
+def compute_residuals_stdev(fluxes_obs, fluxes_model):
+    '''
+    Computes the residuals of the input fluxes and best fit model
+
+    Parameters
+    ----------
+    fluxes_obs: array-like
+        Observed fluxes
+    fluxes_model: array-like
+        Model fluxes
+
+    Returns
+    -------
+    residuals_mean: float
+        The mean of the residuals
+    residuals_stdev: float
+        The standard deviation of the residuals
+    '''
+    residuals = fluxes_obs - fluxes_model
+    return np.mean(residuals), np.std(residuals)

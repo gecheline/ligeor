@@ -119,7 +119,16 @@ def check_eclipse_fitting_cosine(width):
     '''
     Checks if an eclipse is fitted to the out-of-eclipse variability.
     '''
-    if width > 0.5:
+    if width >= 0.5:
+        return True
+    else:
+        return False
+
+def check_eclipse_depth_negative(depth):
+    '''
+    Checks if an eclipse is fitting another feature that does not show a decrease in flux.
+    '''
+    if depth <= 0.0:
         return True
     else:
         return False

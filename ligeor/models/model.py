@@ -101,19 +101,63 @@ class Model(object):
 
 
     def check_eclipses_credibility(self):
+        eclipse_params = self.eclipse_params.copy()
         if hasattr(self, 'eclipse_params'):
-            # check primary eclipse
-            if check_eclipse_fitting_noise(self.model, self.fluxes, self.eclipse_params['primary_depth']) or check_eclipse_fitting_cosine(self.eclipse_params['primary_width']):
-                self.eclipse_params['primary_position'] = np.nan 
-                self.eclipse_params['primary_width'] = np.nan 
-                self.eclipse_params['primary_depth'] = np.nan
 
             # check secondary eclipse
-            if check_eclipse_fitting_noise(self.model, self.fluxes, self.eclipse_params['secondary_depth']) or check_eclipse_fitting_cosine(self.eclipse_params['secondary_width']):
-                self.eclipse_params['secondary_position'] = np.nan 
-                self.eclipse_params['secondary_width'] = np.nan 
-                self.eclipse_params['secondary_depth'] = np.nan
+            if ~np.isnan(eclipse_params['secondary_position']) and check_eclipse_fitting_noise(self.model, self.fluxes, eclipse_params['secondary_depth']) or check_eclipse_fitting_cosine(eclipse_params['secondary_width']):
+                eclipse_params['secondary_position'] = np.nan 
+                eclipse_params['secondary_width'] = np.nan 
+                eclipse_params['secondary_depth'] = np.nan
+                eclipse_params['eclipse_edges'][2] = np.nan
+                eclipse_params['eclipse_edges'][3] = np.nan
+
+            # check primary eclipse
+            elif ~np.isnan(eclipse_params['primary_position']) and check_eclipse_fitting_noise(self.model, self.fluxes, eclipse_params['primary_depth']) or check_eclipse_fitting_cosine(eclipse_params['primary_width']):
+                if ~np.isnan(eclipse_params['secondary_position']):
+                        eclipse_params['primary_position'] = float(eclipse_params['secondary_position'])
+                        eclipse_params['primary_width'] = float(eclipse_params['secondary_width'])
+                        eclipse_params['primary_depth'] = float(eclipse_params['secondary_depth'])
+                        eclipse_params['eclipse_edges'][0] = float(eclipse_params['eclipse_edges'][2])
+                        eclipse_params['eclipse_edges'][1] = float(eclipse_params['eclipse_edges'][3])
+                eclipse_params['secondary_position'] = np.nan 
+                eclipse_params['secondary_width'] = np.nan 
+                eclipse_params['secondary_depth'] = np.nan
+                eclipse_params['eclipse_edges'][2] = np.nan
+                eclipse_params['eclipse_edges'][3] = np.nan
+
+
+            # check overlapping eclipses
+            elif ~np.isnan(eclipse_params['primary_position']) and ~np.isnan(eclipse_params['secondary_position']):
+                pos_dist = np.abs(eclipse_params['primary_position'] - eclipse_params['secondary_position'])
+                if  pos_dist < eclipse_params['primary_width'] or pos_dist < eclipse_params['secondary_width']:
+                    # keep only the deeper eclipse
+                    if eclipse_params['primary_depth'] > eclipse_params['secondary_depth']:
+                        # keep only the primary eclipse
+                        eclipse_params['secondary_position'] = np.nan 
+                        eclipse_params['secondary_width'] = np.nan 
+                        eclipse_params['secondary_depth'] = np.nan
+                        eclipse_params['eclipse_edges'][2] = np.nan
+                        eclipse_params['eclipse_edges'][3] = np.nan
+
+                    else:
+                        # keep the secondary as primary and discard secondary
+                        eclipse_params['primary_position'] = float(eclipse_params['secondary_position'])
+                        eclipse_params['primary_width'] = float(eclipse_params['secondary_width'])
+                        eclipse_params['primary_depth'] = float(eclipse_params['secondary_depth'])
+                        eclipse_params['eclipse_edges'][0] = float(eclipse_params['eclipse_edges'][2])
+                        eclipse_params['eclipse_edges'][1] = float(eclipse_params['eclipse_edges'][3])
+                        eclipse_params['secondary_position'] = np.nan 
+                        eclipse_params['secondary_width'] = np.nan 
+                        eclipse_params['secondary_depth'] = np.nan
+                        eclipse_params['eclipse_edges'][2] = np.nan
+                        eclipse_params['eclipse_edges'][3] = np.nan
+
+            else:
+                pass
 
         else:
             raise ValueError('Eclipse parameters not computed! Call self.compute_eclipse_params() first.')
+
+        return eclipse_params
 

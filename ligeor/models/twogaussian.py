@@ -35,7 +35,8 @@ class TwoGaussianModel(Model):
                     'CG': TwoGaussianModel.cg, 
                     'CGE': TwoGaussianModel.cge, 
                     'CG12': TwoGaussianModel.cg12, 
-                    'CG12E': TwoGaussianModel.cg12e
+                    'CG12E1': TwoGaussianModel.cg12e1,
+                    'CG12E2': TwoGaussianModel.cg12e2
                     }
 
         self.params = {'C': ['C'],
@@ -43,7 +44,9 @@ class TwoGaussianModel(Model):
                 'CG': ['C', 'mu1', 'd1', 'sigma1'],
                 'CGE': ['C', 'mu1', 'd1', 'sigma1', 'Aell', 'phi0'],
                 'CG12': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2'],
-                'CG12E': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell', 'phi0']}
+                'CG12E1': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell'],
+                'CG12E2': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell']
+                }
 
 
   
@@ -303,9 +306,42 @@ class TwoGaussianModel(Model):
         return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2)
 
     @staticmethod
-    def cg12e(phi, C, mu1, d1, sigma1, mu2, d2, sigma2, Aell, phi0):
+    def cg12e1(phi, C, mu1, d1, sigma1, mu2, d2, sigma2, Aell):
         '''
         Constant + two Gaussians + ellipsoidal centered on the primary eclipse
+        
+        Parameters
+        ----------
+        phi: float or array-like
+            The input phase or phases array to compute the model in
+        C: float
+            value of the constant
+        mu1: float
+            Position of the first Gaussian
+        d1: float
+            Amplitude of the first Gaussian
+        sigma1: float
+            Scale (FWHM) of the first Gaussian
+        mu2: float
+            Position of the second Gaussian
+        d2: float
+            Amplitude of the second Gaussian
+        sigma2: float
+            Scale (FWHM) of the second Gaussian
+        Aell: float
+            Amplitude of the elliposoidal
+
+        Returns
+        -------
+        y: array-like
+            y = const(phi, C) - gsum(phi, mu1, d1, sigma1) - gsum(phi, mu2, d2, sigma2) - ellipsoidal(phi, Aell, mu1)
+        '''
+        return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2) - TwoGaussianModel.ellipsoidal(phi, Aell, mu1)
+
+    @staticmethod
+    def cg12e2(phi, C, mu1, d1, sigma1, mu2, d2, sigma2, Aell):
+        '''
+        Constant + two Gaussians + ellipsoidal centered on the secondary eclipse
         
         Parameters
         ----------
@@ -334,45 +370,9 @@ class TwoGaussianModel(Model):
         Returns
         -------
         y: array-like
-            y = const(phi, C) - gsum(phi, mu1, d1, sigma1) - gsum(phi, mu2, d2, sigma2) - ellipsoidal(phi, Aell, mu1)
+            y = const(phi, C) - gsum(phi, mu1, d1, sigma1) - gsum(phi, mu2, d2, sigma2) - ellipsoidal(phi, Aell, mu2)
         '''
-        return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2) - TwoGaussianModel.ellipsoidal(phi, Aell, phi0)
-
-    # @staticmethod
-    # def cg12e2(phi, C, mu1, d1, sigma1, mu2, d2, sigma2, Aell):
-    #     '''
-    #     Constant + two Gaussians + ellipsoidal centered on the secondary eclipse
-        
-    #     Parameters
-    #     ----------
-    #     phi: float or array-like
-    #         The input phase or phases array to compute the model in
-    #     C: float
-    #         value of the constant
-    #     mu1: float
-    #         Position of the first Gaussian
-    #     d1: float
-    #         Amplitude of the first Gaussian
-    #     sigma1: float
-    #         Scale (FWHM) of the first Gaussian
-    #     mu2: float
-    #         Position of the second Gaussian
-    #     d2: float
-    #         Amplitude of the second Gaussian
-    #     sigma2: float
-    #         Scale (FWHM) of the second Gaussian
-    #     Aell: float
-    #         Amplitude of the elliposoidal
-    #     phi0: float
-    #         Phase-point to center the elliposoidal on (position of primary or secondary eclipse)
-
-
-    #     Returns
-    #     -------
-    #     y: array-like
-    #         y = const(phi, C) - gsum(phi, mu1, d1, sigma1) - gsum(phi, mu2, d2, sigma2) - ellipsoidal(phi, Aell, mu2)
-    #     '''
-    #     return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2) - TwoGaussianModel.ellipsoidal(phi, Aell, mu2)
+        return TwoGaussianModel.const(phi, C) - TwoGaussianModel.gsum(phi, mu1, d1, sigma1) - TwoGaussianModel.gsum(phi, mu2, d2, sigma2) - TwoGaussianModel.ellipsoidal(phi, Aell, mu2)
 
 
     @staticmethod
@@ -442,7 +442,7 @@ class TwoGaussianModel(Model):
         return phase_min, edge_left, edge_right
 
     @staticmethod
-    def estimate_eclipse_positions_widths(phases, fluxes, diagnose_init=False):
+    def estimate_eclipse_positions_widths(phases, fluxes, fix_primary=False, fix_secondary=False, diagnose_init=False):
         '''
         Determines the positions and widths of the eclipses in a light curve.
 
@@ -462,26 +462,41 @@ class TwoGaussianModel(Model):
             to lists of len 2 of the initial estimated values for each eclipse.
         '''
         
-        pos1, edge1l, edge1r = TwoGaussianModel.find_eclipse(phases, fluxes)
-        fluxes_sec = fluxes.copy()
-        fluxes_sec[((phases > edge1l) & (phases < edge1r)) | ((phases > edge1l+1) | (phases < edge1r-1))] = np.nan
-        pos2, edge2l, edge2r = TwoGaussianModel.find_eclipse(phases, fluxes_sec)
+        if fix_primary:
+            pos1 = phases[np.argmin(fluxes)]
+            pos2 = pos1+0.5
+            pos2 = pos2-1 if pos2 > 0.5 else pos2 
+            return {'ecl_positions': [pos1, pos2], 'ecl_widths': [0.001, 0.001]}
 
 
-        if diagnose_init:
-            import matplotlib.pyplot as plt
-            plt.figure(figsize=(10,8))
-            plt.plot(phases, fluxes, '.')
-            plt.axhline(y=np.median(fluxes), c='orange')
-            for i,x in enumerate([pos1, edge1l, edge1r]):
-                ls = '-' if i==0 else '--'
-                plt.axvline(x=x, c='r', ls=ls)
-            for i,x in enumerate([pos2, edge2l, edge2r]):
-                ls = '-' if i==0 else '--'
-                plt.axvline(x=x, c='g', ls=ls)
-            plt.show()
+        elif fix_secondary:
+            pos1, edge1l, edge1r = TwoGaussianModel.find_eclipse(phases, fluxes)
+            pos2 = pos1+0.5
+            pos2 = pos2-1 if pos2 > 0.5 else pos2 
+            return {'ecl_positions': [pos1, pos2], 'ecl_widths': [edge1r-edge1l, 0.005]}
 
-        return {'ecl_positions': [pos1, pos2], 'ecl_widths': [edge1r-edge1l, edge2r-edge2l]}
+        else:
+            pos1, edge1l, edge1r = TwoGaussianModel.find_eclipse(phases, fluxes)
+            fluxes_sec = fluxes.copy()
+            fluxes_sec[((phases > edge1l) & (phases < edge1r)) | ((phases > edge1l+1) | (phases < edge1r-1))] = np.nan
+            pos2, edge2l, edge2r = TwoGaussianModel.find_eclipse(phases, fluxes_sec)
+
+
+            if diagnose_init:
+                import matplotlib.pyplot as plt
+                plt.figure(figsize=(10,8))
+                plt.plot(phases, fluxes, '.')
+                plt.axhline(y=np.median(fluxes), c='orange')
+                for i,x in enumerate([pos1, edge1l, edge1r]):
+                    ls = '-' if i==0 else '--'
+                    plt.axvline(x=x, c='r', ls=ls)
+                for i,x in enumerate([pos2, edge2l, edge2r]):
+                    ls = '-' if i==0 else '--'
+                    plt.axvline(x=x, c='g', ls=ls)
+                plt.show()
+
+            # return {'ecl_positions': [pos1, pos2], 'ecl_widths': [edge1r-edge1l, edge2r-edge2l]}
+            return {'ecl_positions': [pos1, pos2], 'ecl_widths': [0.005, 0.005]}
         
     def fit_twoGaussian_models(self, init_pos=[], init_widths=[]):
         '''
@@ -507,14 +522,15 @@ class TwoGaussianModel(Model):
         d10 = self.fluxes.max()-self.fluxes[np.argmin(np.abs(self.phases-mu10))]
         d20 = self.fluxes.max()-self.fluxes[np.argmin(np.abs(self.phases-mu20))]
         Aell0 = 0.001
-        phi0 = 0.0
+        phi0 = 0.25
 
         init_params = {'C': [C0,],
             'CE': [C0, Aell0, phi0],
             'CG': [C0, mu10, d10, sigma10],
             'CGE': [C0, mu10, d10, sigma10, Aell0, phi0],
             'CG12': [C0, mu10, d10, sigma10, mu20, d20, sigma20],
-            'CG12E': [C0, mu10, d10, sigma10, mu20, d20, sigma20, Aell0, phi0]}
+            'CG12E1': [C0, mu10, d10, sigma10, mu20, d20, sigma20, Aell0],
+            'CG12E2': [C0, mu10, d10, sigma10, mu20, d20, sigma20, Aell0]}
 
         # parameters used frequently for bounds
         fmax = self.fluxes.max()
@@ -526,7 +542,8 @@ class TwoGaussianModel(Model):
             'CG': ((0., -0.5, 0., 0.), (fmax, 0.5, fdiff, 0.5)),
             'CGE': ((0., -0.5, 0., 0., 1e-6, -0.5),(fmax, 0.5, fdiff, 0.5, fdiff, 0.5)),
             'CG12': ((0.,-0.5, 0., 0., -0.5, 0., 0.),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5)),
-            'CG12E': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6, -0.5),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff, 0.5))}
+            'CG12E1': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff)),
+            'CG12E2': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff))}
 
         fits = {}
 
@@ -560,7 +577,7 @@ class TwoGaussianModel(Model):
         Computes the BIC value of each model light curve.
         '''
         bics = {}
-        nparams = {'C':1, 'CE':3, 'CG':4, 'CGE':6, 'CG12':7, 'CG12E':9}
+        nparams = {'C':1, 'CE':3, 'CG':4, 'CGE':6, 'CG12':7, 'CG12E1':8, 'CG12E2':8}
 
         for mkey in self.models.keys():
             bics[mkey] = self.bic(self.models[mkey], nparams[mkey])
@@ -605,7 +622,7 @@ class TwoGaussianModel(Model):
         # compute and adjust all available parameters, otherwise the entire eclipse is nan
         if not np.isnan(mu1) and not np.isnan(sigma1) and np.abs(sigma1) < 0.5:
             pos1 = mu1
-            width1 = min(5.6*np.abs(sigma1), 0.5)
+            width1 = min(5.6*np.abs(sigma1), 0.499)
             depth1 = C - self.fluxes[np.argmin(np.abs(self.phases-pos1))]
         else:
             pos1 = np.nan
@@ -613,7 +630,7 @@ class TwoGaussianModel(Model):
             depth1 = np.nan
         if not np.isnan(mu2) and not np.isnan(sigma2) and np.abs(sigma2) < 0.5:
             pos2 = mu2
-            width2 = min(5.6*np.abs(sigma2), 0.5)
+            width2 = min(5.6*np.abs(sigma2), 0.499)
             depth2 = C - self.fluxes[np.argmin(np.abs(self.phases-pos2))]
         else:
             pos2 = np.nan
@@ -624,19 +641,19 @@ class TwoGaussianModel(Model):
         # compute the eclipse edges using the positons and widths
         eclipse_edges = [pos1 - 0.5*width1, pos1+0.5*width1, pos2-0.5*width2, pos2+0.5*width2]
 
-        # check if the resulting eclipses are overlapping:
-        if np.abs(pos2-pos1) < width1 or np.abs(pos2-pos1) < width2:
-            # keep only the deeper eclipse
-            if depth1 > depth2:
-                pos1, pos2 = pos1, np.nan 
-                width1, width2 = width1, np.nan 
-                depth1, depth2 = depth1, np.nan
-                eclipse_edges = [eclipse_edges[0], eclipse_edges[1], np.nan, np.nan]
-            else:
-                pos1, pos2 = pos2, np.nan 
-                width1, width2 = width2, np.nan 
-                depth1, depth2 = depth2, np.nan
-                eclipse_edges = [eclipse_edges[2], eclipse_edges[3], np.nan, np.nan]
+        # # check if the resulting eclipses are overlapping:
+        # if np.abs(pos2-pos1) < width1 or np.abs(pos2-pos1) < width2:
+        #     # keep only the deeper eclipse
+        #     if depth1 > depth2:
+        #         pos1, pos2 = pos1, np.nan 
+        #         width1, width2 = width1, np.nan 
+        #         depth1, depth2 = depth1, np.nan
+        #         eclipse_edges = [eclipse_edges[0], eclipse_edges[1], np.nan, np.nan]
+        #     else:
+        #         pos1, pos2 = pos2, np.nan 
+        #         width1, width2 = width2, np.nan 
+        #         depth1, depth2 = depth2, np.nan
+        #         eclipse_edges = [eclipse_edges[2], eclipse_edges[3], np.nan, np.nan]
 
         self.eclipse_params = {
             'primary_width': width1,
@@ -650,8 +667,9 @@ class TwoGaussianModel(Model):
 
         if interactive:
            self.interactive_eclipse()
-
-        self.check_eclipses_credibility()
+        self.compute_eclipse_area(ecl=1)
+        self.compute_eclipse_area(ecl=2)
+        self.eclipse_params = self.check_eclipses_credibility()
         return self.eclipse_params
 
     @staticmethod
@@ -710,14 +728,36 @@ class TwoGaussianModel(Model):
         else:
             self.eclipse_area = {}
 
-        mu_ind = self.best_fit['param_names'].index('mu%i' % ecl)
-        sigma_ind = self.best_fit['param_names'].index('sigma%i' % ecl)
-        d_ind = self.best_fit['param_names'].index('d%i' % ecl)
-        
-        mu = self.best_fit['param_vals'][0][mu_ind]
-        sigma = self.best_fit['param_vals'][0][sigma_ind]
-        d = self.best_fit['param_vals'][0][d_ind]
-        phi_top = mu + 2.8*sigma
-        phi_bottom = mu - 2.8*sigma
+        if ecl==1:
+            if self.best_fit['func'] in ['C', 'CE']:
+                self.eclipse_area[ecl] = np.nan
+            else:
+                mu_ind = self.best_fit['param_names'].index('mu%i' % ecl)
+                sigma_ind = self.best_fit['param_names'].index('sigma%i' % ecl)
+                d_ind = self.best_fit['param_names'].index('d%i' % ecl)
+                
+                mu = self.best_fit['param_vals'][0][mu_ind]
+                sigma = self.best_fit['param_vals'][0][sigma_ind]
+                d = self.best_fit['param_vals'][0][d_ind]
+                phi_top = mu + 2.8*sigma
+                phi_bottom = mu - 2.8*sigma
 
-        self.eclipse_area[ecl] = TwoGaussianModel.compute_gaussian_area_gaussian(mu, sigma, d, phi_top, phi_bottom)
+                self.eclipse_area[ecl] = TwoGaussianModel.compute_gaussian_area(mu, sigma, d, phi_top, phi_bottom)
+            
+        else:
+            if self.best_fit['func'] in ['C', 'CE', 'CG', 'CGE']:
+                self.eclipse_area[ecl] = np.nan
+            else:
+                mu_ind = self.best_fit['param_names'].index('mu%i' % ecl)
+                sigma_ind = self.best_fit['param_names'].index('sigma%i' % ecl)
+                d_ind = self.best_fit['param_names'].index('d%i' % ecl)
+                
+                mu = self.best_fit['param_vals'][0][mu_ind]
+                sigma = self.best_fit['param_vals'][0][sigma_ind]
+                d = self.best_fit['param_vals'][0][d_ind]
+                phi_top = mu + 2.8*sigma
+                phi_bottom = mu - 2.8*sigma
+
+                self.eclipse_area[ecl] = TwoGaussianModel.compute_gaussian_area(mu, sigma, d, phi_top, phi_bottom)
+
+

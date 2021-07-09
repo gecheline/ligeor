@@ -55,7 +55,11 @@ class EmceeSampler(object):
         return sampler
         
 
-    def compute_results(self, sampler, burnin = 1000, save_lc=True):
+    def compute_results(self, sampler, burnin = 1000, save_lc=True, save_file=''):
+
+        if save_lc and len(save_file) == 0:
+            raise ValueError('Please provide a file name to save the model to or set save_lc=False.')
+        
         # process and log solution
         log_prob = sampler.get_log_prob(flat=True, discard=burnin)
         flat_samples = sampler.get_chain(flat=True, discard=burnin)
@@ -68,15 +72,15 @@ class EmceeSampler(object):
             logp_lim = hist[1][arg_logp_max-1]
             samples_top = flat_samples[log_prob >= logp_lim]
             blobs_top = flat_blobs[log_prob >= logp_lim]
-            log_prob_mean = np.mean(log_prob[log_prob >= logp_lim])
+            # log_prob_mean = np.mean(log_prob[log_prob >= logp_lim])
         except:
             samples_top = flat_samples
             blobs_top = flat_blobs
-            log_prob_mean = np.mean(log_prob)
+            # log_prob_mean = np.mean(log_prob)
         
         ndim = samples_top.shape[1]
         solution = []
-        labels = ['period', *self._model_params]
+
         for j in range(ndim):
             mcmc = np.percentile(samples_top[:, j], [16, 50, 84])
             q = np.diff(mcmc)
@@ -102,7 +106,6 @@ class EmceeSampler(object):
         ndim_blobs = blobs_top.shape[1]
 
         solution_blobs = []
-        labels_blobs = ['phasemin', 'residuals_mean', 'residuals_stdev', 'ecl1_area', 'ecl2_area']
         for j in range(ndim_blobs):
             mcmc_blob = np.percentile(blobs_top[:, j], [16, 50, 84])
             q_blob = np.diff(mcmc_blob)
@@ -117,6 +120,7 @@ class EmceeSampler(object):
         phasemin_sigma_low = sigmas_low_blobs[0]
         phasemin_sigma_high = sigmas_high_blobs[0]
 
+
         if np.isnan(self._t0_init):
             t0_new = 0 + period*phasemin_mean + int((self._times.min()/period)+1)*(period)
         else:
@@ -130,7 +134,7 @@ class EmceeSampler(object):
                         'sigma_high': t0_sigma_high}
 
         # store the rest of the model parameters and their uncertainties
-        self.compute_model(means, sigmas_low, sigmas_high, save_lc = save_lc)
+        self.compute_model(means, sigmas_low, sigmas_high, save_lc = save_lc, save_file=save_file)
         self.compute_eclipse_params(means_blobs, sigmas_low_blobs, sigmas_high_blobs)
 
 
@@ -198,7 +202,7 @@ class EmceeSampler(object):
                         }
 
         for ind, eclkey in enumerate(eclipse_params.keys()):
-            print(eclkey, means[ind], np.max((sigmas_low[ind],sigmas_high[ind])))
+            # print(eclkey, means[ind], np.max((sigmas_low[ind],sigmas_high[ind])))
             eclipse_params[eclkey] = means[ind]
             eclipse_params_err[eclkey] = np.max((sigmas_low[ind],sigmas_high[ind]))
 
@@ -235,6 +239,7 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
 
 
     def logprob(self, values):
+
         fmax = self._fluxes.max()
         fmin = self._fluxes.min()
         fdiff = fmax - fmin
@@ -244,14 +249,15 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
             'CG': ((0., -0.5, 0., 0.), (fmax, 0.5, fdiff, 0.5)),
             'CGE': ((0., -0.5, 0., 0., 1e-6, -0.5),(fmax, 0.5, fdiff, 0.5, fdiff, 0.5)),
             'CG12': ((0.,-0.5, 0., 0., -0.5, 0., 0.),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5)),
-            'CG12E': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6, -0.5),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff, 0.5))}
+            'CG12E1': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff)),
+            'CG12E2': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff))}
         
         period, *model_vals = values
-        
+
         for i,param_val in enumerate(model_vals):
             if param_val < bounds[self._func][0][i] or param_val > bounds[self._func][1][i]:
-                raise Warning('out of prior', self._func, bounds[self._func][0][i], bounds[self._func][1][i], param_val)
-                return -np.inf
+                # raise Warning('out of prior', self._func, bounds[self._func][0][i], bounds[self._func][1][i], param_val)
+                return -np.inf, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
             
         # fold with period
         phases, fluxes_ph, sigmas_ph = phase_fold(self._times, 
@@ -282,7 +288,7 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
             ecl1_area = TwoGaussianModel.compute_gaussian_area(mu, sigma, d, phi_bottom, phi_top)
             ecl2_area = np.nan
         
-        elif self._func in ['CG12', 'CG12E']:
+        elif self._func in ['CG12', 'CG12E1', 'CG12E2']:
             mu1_ind, mu2_ind = self._model_params.index('mu1'), self._model_params.index('mu2')
             sigma1_ind, sigma2_ind = self._model_params.index('sigma1'), self._model_params.index('sigma2')
             d1_ind, d2_ind = self._model_params.index('d1'), self._model_params.index('d2')
@@ -306,13 +312,13 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
             ecl1_area, ecl2_area = np.nan, np.nan
 
         residuals_mean, residuals_stdev = compute_residuals_stdev(fluxes_ph, model)
-        print('residuals: ', residuals_mean, residuals_stdev)
+        # print('residuals: ', residuals_mean, residuals_stdev)
         logprob = -0.5*(np.sum((fluxes_ph-model)**2/sigmas_ph**2))
-
+        # print(logprob, pos1, width1, depth1, pos2, width2, depth2)#, ecl1_area, ecl2_area, residuals_mean, residuals_stdev)
         return logprob, pos1, width1, depth1, pos2, width2, depth2, ecl1_area, ecl2_area, residuals_mean, residuals_stdev
 
     
-    def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True):
+    def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True, save_file=''):
         model_results = {'C': np.nan, 'mu1': np.nan, 'd1': np.nan, 'sigma1': np.nan, 
                         'mu2': np.nan, 'd2': np.nan, 'sigma2': np.nan, 'Aell': np.nan, 'phi0': np.nan
                         }
@@ -343,7 +349,7 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
             twog_func = getattr(TwoGaussianModel, self._func.lower())
             fluxes_syn =twog_func(phases_syn, *means[1:])
             
-            np.savetxt(self._filename+'.2g', np.array([phases_syn, fluxes_syn]).T)
+            np.savetxt(save_file, np.array([phases_syn, fluxes_syn]).T)
 
             fluxes_syn_extended = np.hstack((fluxes_syn[(phases_syn > 0)], fluxes_syn, fluxes_syn[phases_syn < 0.]))
             phases_syn_extended = np.hstack((phases_syn[(phases_syn > 0)]-1., phases_syn, phases_syn[phases_syn < 0.]+1.))

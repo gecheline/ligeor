@@ -136,7 +136,8 @@ class Polyfit(Model):
 
         if return_ck:
             return ck, ssr
-        return ssr
+        else:
+            return ssr
     
 
     def _chain_coeffs(self, ck, verbose=False):
@@ -197,10 +198,14 @@ class Polyfit(Model):
         return y
 
 
-    def fit(self, min_chain_length=8, min_pts_per_segment=5, verbose=False):
-        self._find_knots(min_chain_length=min_chain_length, verbose=verbose)
-        solution = minimize(self._fit_chain, self.knots, args=(min_pts_per_segment,), method='Nelder-Mead')
-        self.knots = solution.x
+    def fit(self, min_chain_length=8, min_pts_per_segment=5, verbose=False, knots = []):
+        if len(knots)==0:
+            self._find_knots(min_chain_length=min_chain_length, verbose=verbose)
+            solution = minimize(self._fit_chain, self.knots, args=(min_pts_per_segment,), method='Nelder-Mead')
+            self.knots = solution.x
+        else:
+            self.knots = knots
+
         ck, self.ssr = self._fit_chain(self.knots, min_pts_per_segment=min_pts_per_segment, return_ck=True)
         self._chain_coeffs(ck)
         self._chain_extremes()
@@ -280,7 +285,15 @@ class Polyfit(Model):
            self.interactive_eclipse()
 
 
-        self.check_eclipses_credibility()
+        self.compute_eclipse_area(ecl=1)
+        self.compute_eclipse_area(ecl=2)
+        # self.eclipse_params = self.check_eclipses_credibility()
+
+        # if np.isnan(self.eclipse_params['primary_position']):
+        #     self.eclipse_area[1] = np.nan
+        # if np.isnan(self.eclipse_params['secondary_position']):
+        #     self.eclipse_area[2] = np.nan
+
         return self.eclipse_params
         
 
@@ -307,6 +320,9 @@ class Polyfit(Model):
             self.eclipse_area = {}
 
         coeffs = self.eclipse_params['eclipse_coeffs'][ecl-1]
-        edges = self.eclipse_params['eclipse_edsges'][ecl-1]
+        if ecl == 1:
+            edges = [self.eclipse_params['eclipse_edges'][0], self.eclipse_params['eclipse_edges'][1]]
+        else:
+            edges = [self.eclipse_params['eclipse_edges'][2], self.eclipse_params['eclipse_edges'][3]]
 
         self.eclipse_area[ecl] = coeffs[0]/3*(edges[1]**3-edges[0]**3) + coeffs[1]/2*(edges[1]**2-edges[0]**2) + coeffs[2]*(edges[1]-edges[0])

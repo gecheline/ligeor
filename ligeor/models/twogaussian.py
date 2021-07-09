@@ -481,7 +481,6 @@ class TwoGaussianModel(Model):
             fluxes_sec[((phases > edge1l) & (phases < edge1r)) | ((phases > edge1l+1) | (phases < edge1r-1))] = np.nan
             pos2, edge2l, edge2r = TwoGaussianModel.find_eclipse(phases, fluxes_sec)
 
-
             if diagnose_init:
                 import matplotlib.pyplot as plt
                 plt.figure(figsize=(10,8))

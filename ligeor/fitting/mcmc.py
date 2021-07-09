@@ -48,7 +48,7 @@ class EmceeSampler(object):
         pos = bestfit_vals + 1e-4 * np.random.randn(nwalkers, len(bestfit_vals))
         nwalkers, ndim = pos.shape
         
-        with Pool(nwalkers) as pool:
+        with Pool(1) as pool:
             sampler = emcee.EnsembleSampler(nwalkers, ndim, self.logprob, pool=pool)
             sampler.run_mcmc(pos, niters, progress=progress)
         
@@ -360,8 +360,112 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
         self._chi2 = chi2
 
 
-# class EmceeSamplerPolyfit(EmceeSampler):
+class EmceeSamplerPolyfit(EmceeSampler):
 
+    def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000, **kwargs):
+        super(EmceeSamplerPolyfit,self).__init__(filename, period_init, t0_init, n_downsample, nbins, **kwargs)
+
+
+    def initial_fit(self):
+        phases, fluxes_ph, sigmas_ph = phase_fold(self._times, 
+                                                        self._fluxes, 
+                                                        self._sigmas, 
+                                                        period=self._period_init, 
+                                                        t0=self._t0_init)
+
+        polyfit = Polyfit(phases=phases, 
+                                    fluxes=fluxes_ph, 
+                                    sigmas=sigmas_ph, 
+                                    )
+        polyfit.fit()
+
+        self._initial_fit = polyfit.knots
+        self._func = 'PF'
+        self._model_params = ['k1', 'k2', 'k3', 'k4']
+
+    def logprob(self, values):
+
+        bounds = [[-0.5,-0.5,-0.5,-0.5],[0.5,0.5,0.5,0.5]]
+        period, *model_vals = values
+
+        for i,param_val in enumerate(model_vals):
+            if param_val < bounds[0][i] or param_val > bounds[1][i]:
+                print('out of prior', bounds[0][i], bounds[1][i], param_val)
+                return -np.inf, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+
+            else:
+                phases, fluxes_ph, sigmas_ph = phase_fold(self._times, 
+                                                                self._fluxes, 
+                                                                self._sigmas, 
+                                                                period=period, 
+                                                                t0=self._t0_init)
+                
+                try:
+                    #TODO: figure out the cause for the "cannot unpack error"
+                    polyfit = Polyfit(phases=phases, 
+                                                fluxes=fluxes_ph, 
+                                                sigmas=sigmas_ph)
+                    polyfit.fit(knots = np.array(model_vals))
+                    model = polyfit.fv(phases)
+                    eclipse_dir = polyfit.compute_eclipse_params()
+                    pos1, pos2 = eclipse_dir['primary_position'], eclipse_dir['secondary_position']
+                    width1, width2 = eclipse_dir['primary_width'], eclipse_dir['secondary_width']
+                    depth1, depth2 = eclipse_dir['primary_depth'], eclipse_dir['secondary_depth']
+                    ecl1_area, ecl2_area = polyfit.eclipse_area[1], polyfit.eclipse_area[2]
+                    residuals_mean, residuals_stdev = compute_residuals_stdev(fluxes_ph, model)
+
+                    # print('residuals: ', residuals_mean, residuals_stdev)
+                    logprob = -0.5*(np.sum((fluxes_ph-model)**2/sigmas_ph**2))
+                    # print(logprob, pos1, width1, depth1, pos2, width2, depth2)#, ecl1_area, ecl2_area, residuals_mean, residuals_stdev)
+                    return logprob, pos1, width1, depth1, pos2, width2, depth2, ecl1_area, ecl2_area, residuals_mean, residuals_stdev
+                except:
+                    return -np.inf, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+
+
+    def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True, save_file=''):
+        model_results = {'k1': np.nan, 'k2': np.nan, 'k3': np.nan, 'k4': np.nan
+                        }
+        model_results_err = {'k1': np.nan, 'k2': np.nan, 'k3': np.nan, 'k4': np.nan
+                        }
+        
+        # results_str = '{}'.format(func)
+        for mkey in model_results.keys():
+            if mkey in self._model_params:
+                pind = self._model_params.index(mkey)
+                model_results[mkey] = means[pind+1]
+                model_results_err[mkey] = np.max((sigmas_low[pind+1],sigmas_high[pind+1]))
+                # results_str += ',{},{}'.format(model_results[mkey],model_results_err[mkey])
+        
+        self._model_values = model_results
+        self._model_values_errs = model_results_err
+        chi2 = np.nan
+
+        if save_lc:
+            phases_obs, fluxes_ph_obs, sigmas_ph_obs = phase_fold(self._times, 
+                                                    self._fluxes, 
+                                                    self._sigmas, 
+                                                    period=self._period_mcmc['value'], 
+                                                    t0=self._t0_mcmc['value'])
+        
+            phases_syn = np.linspace(-0.5,0.5,self._nbins)
+            polyfit = Polyfit(phases=phases_obs, 
+                                    fluxes=fluxes_ph_obs, 
+                                    sigmas=sigmas_ph_obs)
+            print('model values', self._model_values)
+            polyfit.fit(knots = np.array(list(self._model_values.values())))
+            fluxes_syn = polyfit.fv(phases_syn)
+            
+            np.savetxt(save_file, np.array([phases_syn, fluxes_syn]).T)
+
+            fluxes_syn_extended = np.hstack((fluxes_syn[(phases_syn > 0)], fluxes_syn, fluxes_syn[phases_syn < 0.]))
+            phases_syn_extended = np.hstack((phases_syn[(phases_syn > 0)]-1., phases_syn, phases_syn[phases_syn < 0.]+1.))
+            fluxes_interp = interp1d(phases_syn_extended, fluxes_syn_extended)
+            fluxes_model = fluxes_interp(phases_obs)
+            chi2 = -0.5*(np.sum((fluxes_ph_obs-fluxes_model)**2/sigmas_ph_obs**2))
+        
+        self._chi2 = chi2
+
+# class EmceeSamplerPolyfit(EmceeSampler):
 
 #     def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000, **kwargs):
 #         super(EmceeSamplerPolyfit,self).__init__(filename, period_init, t0_init, n_downsample, nbins, **kwargs)

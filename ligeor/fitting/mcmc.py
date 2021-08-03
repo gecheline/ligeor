@@ -55,87 +55,104 @@ class EmceeSampler(object):
         return sampler
         
 
-    def compute_results(self, sampler, burnin = 1000, save_lc=True, save_file=''):
+    def compute_results(self, sampler, burnin = 1000, save_lc=True, save_file='', failed=False):
 
         if save_lc and len(save_file) == 0:
             raise ValueError('Please provide a file name to save the model to or set save_lc=False.')
         
-        # process and log solution
-        log_prob = sampler.get_log_prob(flat=True, discard=burnin)
-        flat_samples = sampler.get_chain(flat=True, discard=burnin)
-        flat_blobs = sampler.get_blobs(flat=True, discard=burnin)
-        
-        #figure out if there is branching in the solution and find the highest logp branch
-        try:
-            hist = np.histogram(log_prob, bins=50)
-            arg_logp_max = np.argwhere(hist[0] != 0)[-1]
-            logp_lim = hist[1][arg_logp_max-1]
-            samples_top = flat_samples[log_prob >= logp_lim]
-            blobs_top = flat_blobs[log_prob >= logp_lim]
-            # log_prob_mean = np.mean(log_prob[log_prob >= logp_lim])
-        except:
-            samples_top = flat_samples
-            blobs_top = flat_blobs
-            # log_prob_mean = np.mean(log_prob)
-        
-        ndim = samples_top.shape[1]
-        solution = []
-
-        for j in range(ndim):
-            mcmc = np.percentile(samples_top[:, j], [16, 50, 84])
-            q = np.diff(mcmc)
-            solution.append([mcmc[1], q[0], q[1]])
-
-        solution = np.array(solution)
-
-        # compute the new period and errs
-        means = solution[:,0]
-        sigmas_low = solution[:,1]
-        sigmas_high = solution[:,2]
-
-        period = means[0]
-        period_sigma_low = sigmas_low[0]
-        period_sigma_high = sigmas_high[0]
-        
-        self._period_mcmc = {'value': period,
-                            'sigma_low': period_sigma_low, 
-                            'sigma_high': period_sigma_high}
-
-        # compute the blob parameters
-        # phasemin, residuals_mean, residuals_stdev, ecl1_area, ecl2_area
-        ndim_blobs = blobs_top.shape[1]
-
-        solution_blobs = []
-        for j in range(ndim_blobs):
-            mcmc_blob = np.percentile(blobs_top[:, j], [16, 50, 84])
-            q_blob = np.diff(mcmc_blob)
-            solution_blobs.append([mcmc_blob[1], q_blob[0], q_blob[1]])
-
-        solution_blobs = np.array(solution_blobs)
-        means_blobs = solution_blobs[:,0]
-        sigmas_low_blobs = solution_blobs[:,1]
-        sigmas_high_blobs = solution_blobs[:,2]
-
-        phasemin_mean = means_blobs[0]
-        phasemin_sigma_low = sigmas_low_blobs[0]
-        phasemin_sigma_high = sigmas_high_blobs[0]
-
-
-        if np.isnan(self._t0_init):
-            t0_new = 0 + period*phasemin_mean + int((self._times.min()/period)+1)*(period)
-        else:
-            t0_new = self._t0_init + period*phasemin_mean
-
-        t0_sigma_low = (period**2 * phasemin_sigma_low**2 + period_sigma_low**2 * phasemin_mean**2)**0.5
-        t0_sigma_high = (period**2 * phasemin_sigma_high**2 + period_sigma_high**2 * phasemin_mean**2)**0.5
-
-        self._t0_mcmc = {'value': t0_new,
-                        'sigma_low': t0_sigma_low, 
-                        'sigma_high': t0_sigma_high}
-
         # store the rest of the model parameters and their uncertainties
-        self.compute_model(means, sigmas_low, sigmas_high, save_lc = save_lc, save_file=save_file)
-        self.compute_eclipse_params(means_blobs, sigmas_low_blobs, sigmas_high_blobs)
+        means, sigmas_low, sigmas_high, means_blobs, sigmas_low_blobs, sigmas_high_blobs = self.compute_ephemerides(sampler, burnin, failed=failed)
+        self.compute_model(means, sigmas_low, sigmas_high, save_lc = save_lc, save_file=save_file, failed=failed)
+        self.compute_eclipse_params(means_blobs, sigmas_low_blobs, sigmas_high_blobs, failed=failed)
+
+    def compute_ephemerides(self, sampler, burnin, failed=False):
+
+        if failed:
+            self._period_mcmc = {'value': np.nan,
+                    'sigma_low': np.nan, 
+                    'sigma_high': np.nan}
+
+            self._t0_mcmc = {'value': np.nan,
+                    'sigma_low': np.nan, 
+                    'sigma_high': np.nan}
+
+            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+
+        else:
+            # process and log solution
+            log_prob = sampler.get_log_prob(flat=True, discard=burnin)
+            flat_samples = sampler.get_chain(flat=True, discard=burnin)
+            flat_blobs = sampler.get_blobs(flat=True, discard=burnin)
+            
+            #figure out if there is branching in the solution and find the highest logp branch
+            try:
+                hist = np.histogram(log_prob, bins=50)
+                arg_logp_max = np.argwhere(hist[0] != 0)[-1]
+                logp_lim = hist[1][arg_logp_max-1]
+                samples_top = flat_samples[log_prob >= logp_lim]
+                blobs_top = flat_blobs[log_prob >= logp_lim]
+                # log_prob_mean = np.mean(log_prob[log_prob >= logp_lim])
+            except:
+                samples_top = flat_samples
+                blobs_top = flat_blobs
+                # log_prob_mean = np.mean(log_prob)
+            
+            ndim = samples_top.shape[1]
+            solution = []
+
+            for j in range(ndim):
+                mcmc = np.percentile(samples_top[:, j], [16, 50, 84])
+                q = np.diff(mcmc)
+                solution.append([mcmc[1], q[0], q[1]])
+
+            solution = np.array(solution)
+
+            # compute the new period and errs
+            means = solution[:,0]
+            sigmas_low = solution[:,1]
+            sigmas_high = solution[:,2]
+
+            period = means[0]
+            period_sigma_low = sigmas_low[0]
+            period_sigma_high = sigmas_high[0]
+            
+            self._period_mcmc = {'value': period,
+                                'sigma_low': period_sigma_low, 
+                                'sigma_high': period_sigma_high}
+
+            # compute the blob parameters
+            # phasemin, residuals_mean, residuals_stdev, ecl1_area, ecl2_area
+            ndim_blobs = blobs_top.shape[1]
+
+            solution_blobs = []
+            for j in range(ndim_blobs):
+                mcmc_blob = np.percentile(blobs_top[:, j], [16, 50, 84])
+                q_blob = np.diff(mcmc_blob)
+                solution_blobs.append([mcmc_blob[1], q_blob[0], q_blob[1]])
+
+            solution_blobs = np.array(solution_blobs)
+            means_blobs = solution_blobs[:,0]
+            sigmas_low_blobs = solution_blobs[:,1]
+            sigmas_high_blobs = solution_blobs[:,2]
+
+            phasemin_mean = means_blobs[0]
+            phasemin_sigma_low = sigmas_low_blobs[0]
+            phasemin_sigma_high = sigmas_high_blobs[0]
+
+
+            if np.isnan(self._t0_init):
+                t0_new = 0 + period*phasemin_mean + int((self._times.min()/period)+1)*(period)
+            else:
+                t0_new = self._t0_init + period*phasemin_mean
+
+            t0_sigma_low = (period**2 * phasemin_sigma_low**2 + period_sigma_low**2 * phasemin_mean**2)**0.5
+            t0_sigma_high = (period**2 * phasemin_sigma_high**2 + period_sigma_high**2 * phasemin_mean**2)**0.5
+
+            self._t0_mcmc = {'value': t0_new,
+                            'sigma_low': t0_sigma_low, 
+                            'sigma_high': t0_sigma_high}
+
+            return means, sigmas_low, sigmas_high, means_blobs, sigmas_low_blobs, sigmas_high_blobs
 
 
     def save_results_to_file(self, results_file, type='ephemerides', ind=''):
@@ -152,6 +169,7 @@ class EmceeSampler(object):
 
         elif type=='model_values':
             results_str = self._func+','
+
             for i,mkey in enumerate(self._model_values.keys()):
                 results_str += '{},{}'.format(self._model_values[mkey],self._model_values_errs[mkey])
                 if i < len(self._model_values.keys())-1:
@@ -187,7 +205,7 @@ class EmceeSampler(object):
         return None
 
 
-    def compute_eclipse_params(self, means, sigmas_low, sigmas_high):
+    def compute_eclipse_params(self, means, sigmas_low, sigmas_high, failed=False):
         # pos1, width1, depth1, pos2, width2, depth2, ecl1_area, ecl2_area, residuals_mean, residuals_stdev
         eclipse_params = {'pos1': np.nan, 'width1': np.nan, 'depth1': np.nan, 
                           'pos2': np.nan, 'width2': np.nan, 'depth2': np.nan,
@@ -201,10 +219,11 @@ class EmceeSampler(object):
                           'residuals_mean': np.nan, 'residuals_stdev': np.nan
                         }
 
-        for ind, eclkey in enumerate(eclipse_params.keys()):
-            # print(eclkey, means[ind], np.max((sigmas_low[ind],sigmas_high[ind])))
-            eclipse_params[eclkey] = means[ind]
-            eclipse_params_err[eclkey] = np.max((sigmas_low[ind],sigmas_high[ind]))
+        if not failed:
+            for ind, eclkey in enumerate(eclipse_params.keys()):
+                # print(eclkey, means[ind], np.max((sigmas_low[ind],sigmas_high[ind])))
+                eclipse_params[eclkey] = means[ind]
+                eclipse_params_err[eclkey] = np.max((sigmas_low[ind],sigmas_high[ind]))
 
         
         self._eclipse_params = eclipse_params
@@ -318,7 +337,7 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
         return logprob, pos1, width1, depth1, pos2, width2, depth2, ecl1_area, ecl2_area, residuals_mean, residuals_stdev
 
     
-    def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True, save_file=''):
+    def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True, save_file='', failed=False):
         model_results = {'C': np.nan, 'mu1': np.nan, 'd1': np.nan, 'sigma1': np.nan, 
                         'mu2': np.nan, 'd2': np.nan, 'sigma2': np.nan, 'Aell': np.nan, 'phi0': np.nan
                         }
@@ -327,18 +346,23 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
                         }
         
         # results_str = '{}'.format(func)
-        for mkey in model_results.keys():
-            if mkey in self._model_params:
-                pind = self._model_params.index(mkey)
-                model_results[mkey] = means[pind+1]
-                model_results_err[mkey] = np.max((sigmas_low[pind+1],sigmas_high[pind+1]))
-                # results_str += ',{},{}'.format(model_results[mkey],model_results_err[mkey])
+        if failed:
+            self._model_values = model_results
+            self._model_values_errs = model_results_err
+            self._chi2 = np.nan
         
-        self._model_values = model_results
-        self._model_values_errs = model_results_err
-        chi2 = np.nan
+        else:
+            for mkey in model_results.keys():
+                if mkey in self._model_params:
+                    pind = self._model_params.index(mkey)
+                    model_results[mkey] = means[pind+1]
+                    model_results_err[mkey] = np.max((sigmas_low[pind+1],sigmas_high[pind+1]))
+                    # results_str += ',{},{}'.format(model_results[mkey],model_results_err[mkey])
+                
+            self._model_values = model_results
+            self._model_values_errs = model_results_err
+            chi2 = np.nan
 
-        if save_lc:
             phases_obs, fluxes_ph_obs, sigmas_ph_obs = phase_fold(self._times, 
                                                     self._fluxes, 
                                                     self._sigmas, 
@@ -349,15 +373,16 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
             twog_func = getattr(TwoGaussianModel, self._func.lower())
             fluxes_syn =twog_func(phases_syn, *means[1:])
             
-            np.savetxt(save_file, np.array([phases_syn, fluxes_syn]).T)
+            if save_lc:
+                np.savetxt(save_file, np.array([phases_syn, fluxes_syn]).T)
 
             fluxes_syn_extended = np.hstack((fluxes_syn[(phases_syn > 0)], fluxes_syn, fluxes_syn[phases_syn < 0.]))
             phases_syn_extended = np.hstack((phases_syn[(phases_syn > 0)]-1., phases_syn, phases_syn[phases_syn < 0.]+1.))
             fluxes_interp = interp1d(phases_syn_extended, fluxes_syn_extended)
             fluxes_model = fluxes_interp(phases_obs)
             chi2 = -0.5*(np.sum((fluxes_ph_obs-fluxes_model)**2/sigmas_ph_obs**2))
-        
-        self._chi2 = chi2
+            
+            self._chi2 = chi2
 
 
 class EmceeSamplerPolyfit(EmceeSampler):

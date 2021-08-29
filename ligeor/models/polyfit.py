@@ -53,7 +53,8 @@ class Polyfit(Model):
         self.xmax = xmax
         self.polyorder = polyorder
         self.chain_length = chain_length
-        self.sdata = self.data.copy()#[self.data[:,0].argsort()]
+        # self.sdata = self.data.copy()#[self.data[:,0].argsort()]
+        self.sdata = self.data[self.data[:,0].argsort()]
 
         
     def _find_knots(self, min_chain_length=8, verbose=False):
@@ -78,7 +79,6 @@ class Polyfit(Model):
 
         return self.knots
     
-
     def _find_segments(self, knots):
         self.sdata = self.data.copy()
         self.sdata[:,0][self.sdata[:,0] < knots[0]] += 1
@@ -86,7 +86,6 @@ class Polyfit(Model):
 
         segs = [np.argmax(self.sdata[:,0]>knot) for knot in knots[1:]] + [len(self.sdata)]
         return segs
-
 
     def _build_A_matrix(self, knots, segs):
         self.A = np.zeros(shape=(len(self.sdata), 8))
@@ -122,25 +121,34 @@ class Polyfit(Model):
         self.A[segs[2]:segs[3],5] = knots[3]**2-knots[2]**2 + x*(knots[3]**2-knots[2]**2)
         self.A[segs[2]:segs[3],6] = knots[3]-knots[2] + x*(knots[3]-knots[2])
         self.A[segs[2]:segs[3],7] = self.sdata[segs[2]:segs[3],0]**2-knots[3]**2 + x*((knots[0]+1)**2-knots[3]**2)
-    
 
     def _fit_chain(self, knots, min_pts_per_segment=5, return_ck=False):
+        # we need to sort the knots first because the minimizer can criss-cross them:
+        knots = np.sort(knots)
+        
         segs = self._find_segments(knots)
-        if np.ediff1d(segs).min() < min_pts_per_segment:
-            return 1e10
-        if np.any(knots < self.xmin):# or np.any(knots > self.xmax):
+        if np.ediff1d(segs).min() < min_pts_per_segment or np.any(knots < self.xmin):
+            if return_ck:
+                return None, 1e10
             return 1e10
 
-        A = self._build_A_matrix(knots, segs)
+        self._build_A_matrix(knots, segs)
         ck, ssr, rank, svd = np.linalg.lstsq(self.A, self.sdata[:,1], rcond=None)
+
+        # safety switch when things go wrong:
+        if len(ssr) == 0:
+            ssr = 1e10
 
         if return_ck:
             return ck, ssr
-        else:
-            return ssr
+        # print(ck, ssr, rank, svd, knots, segs)
+        return ssr
     
-
     def _chain_coeffs(self, ck, verbose=False):
+        if ck is None:
+            self.coeffs = None
+            return
+        
         c0 = ck[2]
         c1 = (ck[0]-ck[3])*self.knots[1]**2 + (ck[1]-ck[4])*self.knots[1] + c0
         c2 = (ck[3]-ck[5])*self.knots[2]**2 + (ck[4]-ck[6])*self.knots[2] + c1
@@ -155,19 +163,28 @@ class Polyfit(Model):
 
         self.coeffs = ((ck[0], ck[1], c0), (ck[3], ck[4], c1), (ck[5], ck[6], c2), (ck[7], b3, c3))
     
-
     def _chain_extremes(self):
-        exts_x = [-c[1]/2/c[0] for c in self.coeffs]
+        if self.coeffs is None:
+            self.extremes = None
+            return
+
+        exts = [-c[1]/2/c[0] for c in self.coeffs]
         knots = np.concatenate((self.knots, [self.knots[0]+1]))
-        exts_x = np.array(exts_x)
-        exts_y = np.zeros(len(exts_x))
         for k in range(4):
-            if exts_x[k] < knots[k] or exts_x[k] > knots[k+1]:
-                exts_x[k] = np.nan
-            c = self.coeffs[k]
-            exts_y[k] = c[0]*exts_x[k]**2 + c[1]*exts_x[k] + c[2]
-        self.extremes = np.array([exts_x, exts_y]).T
+            if exts[k] < knots[k] or exts[k] > knots[k+1]:
+                exts[k] = np.nan
+        self.extremes = np.array(exts)
     
+    def _remap_1d(self, d, sort=True):
+        while len(d[d<self.xmin]) > 0:
+            d[d<self.xmin] += 1
+        while len(d[d>self.xmax]) > 0:
+            d[d>self.xmax] -= 1
+
+        if sort:
+            d.sort()
+
+        return d
 
     def _remap(self, d, sort=True):
         ncols = 1 if len(d.shape) == 1 else d.shape[1]
@@ -185,8 +202,28 @@ class Polyfit(Model):
 
         return d      
     
+    def fit(self, min_chain_length=8, min_pts_per_segment=10, method='Nelder-Mead', knots=None, coeffs = None, verbose=False):
+        if knots is None:
+            self._find_knots(min_chain_length=min_chain_length, verbose=verbose)
+        else:
+            self.knots = knots
+        
+        if coeffs is None:
+            solution = minimize(self._fit_chain, self.knots, args=(min_pts_per_segment,), method=method)
+            self.knots = solution.x
+            ck, self.ssr = self._fit_chain(self.knots, min_pts_per_segment=min_pts_per_segment, return_ck=True)
+            self._chain_coeffs(ck)
+        else:
+            self.coeffs = coeffs
+
+        self._chain_extremes()
+        self.model = self.fv(x=self.phases)
+        
+        return self.knots, self.coeffs, self.extremes
     
     def fv(self, x):
+        if self.coeffs is None:
+            return None
         x[x<self.knots[0]] += 1
         y = np.empty_like(x)
         for k in range(len(self.knots)-1):
@@ -198,46 +235,42 @@ class Polyfit(Model):
         return y
 
 
-    def fit(self, min_chain_length=8, min_pts_per_segment=5, verbose=False, knots = []):
-        if len(knots)==0:
-            self._find_knots(min_chain_length=min_chain_length, verbose=verbose)
-            solution = minimize(self._fit_chain, self.knots, args=(min_pts_per_segment,), method='Nelder-Mead')
-            self.knots = solution.x
-        else:
-            self.knots = knots
-
-        ck, self.ssr = self._fit_chain(self.knots, min_pts_per_segment=min_pts_per_segment, return_ck=True)
-        self._chain_coeffs(ck)
-        self._chain_extremes()
-        self.model = self.fv(self.phases)
-        
-        return self.knots, self.coeffs, self.extremes
-
-
-    def plot(self, x):
+    def plot(self, x, savefig=None, show=True):
         import matplotlib.pyplot as plt
+
+        if self.coeffs is None:
+            return None
 
         if x is None:
             x = self.sdata[:,0]
-    
+
+        knot_fvs = self.fv(self.knots.copy())
+        knots = self._remap_1d(self.knots.copy(), sort=False)
+
         y = self.fv(x)
         d = np.vstack((x, y)).T
 
         self._remap(self.sdata)
         d = self._remap(d)
-        self._remap(self.extremes)
+        self._remap_1d(self.extremes)
 
-        # knots = self._remap(self.knots.copy())
-        # knot_fvs = self.fv(self.knots)
+        # print(knots)
+        # print(knot_fvs)
 
         plt.plot(self.sdata[:,0], self.sdata[:,1], 'b.')
-        # plt.plot(knots, knot_fvs, 'ms')
-        plt.plot(self.knots, self.fv(self.knots), 'ms')
+        plt.plot(knots, knot_fvs, 'ms')
         plt.plot(d[:,0], d[:,1], 'r-')
 
         for k in range(4):
-            plt.axvline(self.extremes[:,0][k], ls='--')
-        plt.show()
+            plt.axvline(self.extremes[k], ls='--')
+        
+        if savefig is not None:
+            plt.savefig(savefig)
+
+        if show:
+            plt.show()
+        else:
+            plt.clf()
 
 
     def compute_eclipse_params(self, interactive=False):
@@ -258,8 +291,12 @@ class Polyfit(Model):
         results: dict
             A dictionary of the eclipse paramter values.
         '''
-
-        eclipse_args = np.argsort(self.extremes[:,1])[:2]
+    
+        ext_y = self.fv(x=self.extremes)
+        # fv for x=np.nan doesn't return nan!
+        #TODO: troubleshoot .fv for a discrete set of values and why np.nan results in a value
+        ext_y[np.isnan(self.extremes)] = np.nan
+        eclipse_args = np.argsort(ext_y)[:2]
 
         # let's extend the knots array left and right so it's continuous (for computing the width)
         knots_extended = np.hstack((self.knots-0.5, self.knots, self.knots+0.5))
@@ -272,10 +309,10 @@ class Polyfit(Model):
         self.eclipse_params = {
             'primary_width': knots1[1]-knots1[0],
             'secondary_width': knots2[1]-knots2[0],
-            'primary_position': self.extremes[:,0][eclipse_args[0]],
-            'secondary_position': self.extremes[:,0][eclipse_args[1]],
-            'primary_depth': mean_outofecl - self.extremes[:,1][eclipse_args[0]],
-            'secondary_depth': mean_outofecl - self.extremes[:,1][eclipse_args[1]],
+            'primary_position': self.extremes[eclipse_args[0]],
+            'secondary_position': self.extremes[eclipse_args[1]],
+            'primary_depth': mean_outofecl - ext_y[eclipse_args[0]],
+            'secondary_depth': mean_outofecl - ext_y[eclipse_args[1]],
             'eclipse_edges': np.hstack((knots1, knots2)),
             'eclipse_coeffs': [self.coeffs[eclipse_args[0]], self.coeffs[eclipse_args[1]]]
         }
@@ -287,12 +324,36 @@ class Polyfit(Model):
 
         self.compute_eclipse_area(ecl=1)
         self.compute_eclipse_area(ecl=2)
-        # self.eclipse_params = self.check_eclipses_credibility()
 
-        # if np.isnan(self.eclipse_params['primary_position']):
-        #     self.eclipse_area[1] = np.nan
-        # if np.isnan(self.eclipse_params['secondary_position']):
-        #     self.eclipse_area[2] = np.nan
+        self.eclipse_params = self.check_eclipses_credibility()
+
+        # check if eclipses need to be swapped:
+        if ~np.isnan(self.eclipse_params['secondary_depth']) and ~np.isnan(self.eclipse_params['primary_depth']): 
+
+            if self.eclipse_params['secondary_depth'] > self.eclipse_params['primary_depth']:
+                # the secondary is deeper than the primary, so we swap them
+                pos1, d1, w1, edge1 = self.eclipse_params['secondary_position'], self.eclipse_params['secondary_depth'], self.eclipse_params['secondary_width'], self.eclipse_params['eclipse_edges'][2:]
+                pos2, d2, w2, edge2 = self.eclipse_params['primary_position'], self.eclipse_params['primary_depth'], self.eclipse_params['primary_width'], self.eclipse_params['eclipse_edges'][:2]
+
+                self.eclipse_params['primary_position'] = pos1 
+                self.eclipse_params['primary_width'] = w1
+                self.eclipse_params['primary_depth'] = d1
+                self.eclipse_params['secondary_position'] = pos2 
+                self.eclipse_params['secondary_width'] = w2
+                self.eclipse_params['secondary_depth'] = d2
+                self.eclipse_params['eclipse_edges'] = [edge1[0],edge1[1], edge2[0], edge2[1]]
+
+        elif ~np.isnan(self.eclipse_params['secondary_depth']) and np.isnan(self.eclipse_params['primary_depth']):
+            # there is only one eclipse and it's fitted by the "secondary", so we need to move it to primary
+            pos1, d1, w1, edge1 = self.eclipse_params['secondary_position'], self.eclipse_params['secondary_depth'], self.eclipse_params['secondary_width'], self.eclipse_params['eclipse_edges'][2:]
+
+            self.eclipse_params['primary_position'] = pos1 
+            self.eclipse_params['primary_width'] = w1
+            self.eclipse_params['primary_depth'] = d1
+            self.eclipse_params['secondary_position'] = np.nan
+            self.eclipse_params['secondary_width'] = np.nan
+            self.eclipse_params['secondary_depth'] = np.nan
+            self.eclipse_params['eclipse_edges'] = [edge1[0],edge1[1], np.nan, np.nan]
 
         return self.eclipse_params
         

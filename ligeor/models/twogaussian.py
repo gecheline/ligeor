@@ -669,6 +669,20 @@ class TwoGaussianModel(Model):
         self.compute_eclipse_area(ecl=1)
         self.compute_eclipse_area(ecl=2)
         self.eclipse_params = self.check_eclipses_credibility()
+
+        # check if eclipses need to be swapped:
+        if ~np.isnan(self.eclipse_params['primary_depth']) and ~np.isnan(self.eclipse_params['secondary_depth']):
+            if self.eclipse_params['secondary_depth'] > self.eclipse_params['primary_depth']:
+                pos1, d1, w1, edge1 = self.eclipse_params['secondary_position'], self.eclipse_params['secondary_depth'], self.eclipse_params['secondary_width'], self.eclipse_params['eclipse_edges'][2:]
+                pos2, d2, w2, edge2 = self.eclipse_params['primary_position'], self.eclipse_params['primary_depth'], self.eclipse_params['primary_width'], self.eclipse_params['eclipse_edges'][:2]
+
+                self.eclipse_params['primary_position'] = pos1 
+                self.eclipse_params['primary_width'] = w1
+                self.eclipse_params['primary_depth'] = d1
+                self.eclipse_params['secondary_position'] = pos2 
+                self.eclipse_params['secondary_width'] = w2
+                self.eclipse_params['secondary_depth'] = d2
+                self.eclipse_params['eclipse_edges'] = [edge1[0],edge1[1], edge2[0], edge2[1]]
         return self.eclipse_params
 
     @staticmethod
@@ -758,5 +772,17 @@ class TwoGaussianModel(Model):
                 phi_bottom = mu - 2.8*sigma
 
                 self.eclipse_area[ecl] = TwoGaussianModel.compute_gaussian_area(mu, sigma, d, phi_top, phi_bottom)
+
+
+    def plot(self):
+        import matplotlib.pyplot as plt
+
+        plt.plot(self.phases, self.fluxes, 'b.')
+        plt.plot(self.phases, self.model, 'r-')
+
+        for i in range(4):
+            plt.axvline(self.eclipse_params['eclipse_edges'][i])
+
+        plt.show()
 
 

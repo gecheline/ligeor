@@ -480,45 +480,50 @@ class EmceeSamplerPolyfit(EmceeSampler):
                             'c31': np.nan, 'c32': np.nan, 'c33': np.nan,
                             'c41': np.nan, 'c42': np.nan, 'c43': np.nan
                         }
+        if failed:
+            self._model_values = model_results
+            self._model_values_errs = model_results_err
+            self._chi2 = np.nan
+
+        else:
+            # results_str = '{}'.format(func)
+            for mkey in model_results.keys():
+                if mkey in self._model_params:
+                    pind = self._model_params.index(mkey)
+                    model_results[mkey] = means[pind+1]
+                    model_results_err[mkey] = np.max((sigmas_low[pind+1],sigmas_high[pind+1]))
+                    # results_str += ',{},{}'.format(model_results[mkey],model_results_err[mkey])
+            
+            self._model_values = model_results
+            self._model_values_errs = model_results_err
+            chi2 = np.nan
+
+            
+            phases_obs, fluxes_ph_obs, sigmas_ph_obs = phase_fold(self._times, 
+                                                    self._fluxes, 
+                                                    self._sigmas, 
+                                                    period=self._period_mcmc['value'], 
+                                                    t0=self._t0_init)
         
-        # results_str = '{}'.format(func)
-        for mkey in model_results.keys():
-            if mkey in self._model_params:
-                pind = self._model_params.index(mkey)
-                model_results[mkey] = means[pind+1]
-                model_results_err[mkey] = np.max((sigmas_low[pind+1],sigmas_high[pind+1]))
-                # results_str += ',{},{}'.format(model_results[mkey],model_results_err[mkey])
-        
-        self._model_values = model_results
-        self._model_values_errs = model_results_err
-        chi2 = np.nan
+            polyfit = Polyfit(phases=phases_obs, 
+                                    fluxes=fluxes_ph_obs, 
+                                    sigmas=sigmas_ph_obs)
 
-        
-        phases_obs, fluxes_ph_obs, sigmas_ph_obs = phase_fold(self._times, 
-                                                self._fluxes, 
-                                                self._sigmas, 
-                                                period=self._period_mcmc['value'], 
-                                                t0=self._t0_init)
-    
-        polyfit = Polyfit(phases=phases_obs, 
-                                fluxes=fluxes_ph_obs, 
-                                sigmas=sigmas_ph_obs)
+            knots = np.array(list(self._model_values.values())[:4])
+            coeffs = np.array(list(self._model_values.values())[4:]).reshape(4,3)
+            polyfit.fit(knots = knots, coeffs = coeffs)
+            fluxes_model = polyfit.fv(x = phases_obs)
+            chi2 = -0.5*(np.sum((fluxes_ph_obs-fluxes_model)**2/sigmas_ph_obs**2))
+            self._chi2 = chi2
 
-        knots = np.array(list(self._model_values.values())[:4])
-        coeffs = np.array(list(self._model_values.values())[4:]).reshape(4,3)
-        polyfit.fit(knots = knots, coeffs = coeffs)
-        fluxes_model = polyfit.fv(x = phases_obs)
-        chi2 = -0.5*(np.sum((fluxes_ph_obs-fluxes_model)**2/sigmas_ph_obs**2))
-        self._chi2 = chi2
+            if show:
+                import matplotlib.pyplot as plt
+                plt.plot(phases_obs, fluxes_ph_obs, 'k.')
+                plt.plot(phases_obs, fluxes_model, 'r-')
+                plt.show()
 
-        if show:
-            import matplotlib.pyplot as plt
-            plt.plot(phases_obs, fluxes_ph_obs, 'k.')
-            plt.plot(phases_obs, fluxes_model, 'r-')
-            plt.show()
-
-        if save_lc:
-            np.savetxt(save_file, np.array([phases_obs, fluxes_model]).T)
+            if save_lc:
+                np.savetxt(save_file, np.array([phases_obs, fluxes_model]).T)
 
         
 

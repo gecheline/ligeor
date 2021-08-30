@@ -291,15 +291,15 @@ class Polyfit(Model):
         results: dict
             A dictionary of the eclipse paramter values.
         '''
-    
-        ext_y = self.fv(x=self.extremes)
+        ext_x = self.extremes
+        ext_y = self.fv(x=ext_x)
         # fv for x=np.nan doesn't return nan!
         #TODO: troubleshoot .fv for a discrete set of values and why np.nan results in a value
         ext_y[np.isnan(self.extremes)] = np.nan
         eclipse_args = np.argsort(ext_y)[:2]
 
         # let's extend the knots array left and right so it's continuous (for computing the width)
-        knots_extended = np.hstack((self.knots-0.5, self.knots, self.knots+0.5))
+        knots_extended = np.hstack((self.knots-1, self.knots, self.knots+1))
 
         knots1 = np.array([knots_extended[eclipse_args[0]+4], knots_extended[eclipse_args[0]+5]])
         knots2 = np.array([knots_extended[eclipse_args[1]+4], knots_extended[eclipse_args[1]+5]])
@@ -307,10 +307,10 @@ class Polyfit(Model):
         mean_outofecl = self.fv(np.hstack((knots1, knots2))).mean()
 
         self.eclipse_params = {
-            'primary_width': knots1[1]-knots1[0],
-            'secondary_width': knots2[1]-knots2[0],
-            'primary_position': self.extremes[eclipse_args[0]],
-            'secondary_position': self.extremes[eclipse_args[1]],
+            'primary_width': np.abs(knots1[1]-knots1[0]),
+            'secondary_width': np.abs(knots2[1]-knots2[0]),
+            'primary_position': ext_x[eclipse_args[0]],
+            'secondary_position': ext_x[eclipse_args[1]],
             'primary_depth': mean_outofecl - ext_y[eclipse_args[0]],
             'secondary_depth': mean_outofecl - ext_y[eclipse_args[1]],
             'eclipse_edges': np.hstack((knots1, knots2)),

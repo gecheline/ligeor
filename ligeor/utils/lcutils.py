@@ -30,7 +30,7 @@ def load_lc(lc_file, n_downsample=0, phase_folded=False, usecols=(0,1,2), delimi
                 'sigmas': lc[:,2][::n_downsample]}
 
 
-def phase_fold(times, fluxes, sigmas, period=1, t0=0):
+def phase_fold(times, fluxes, sigmas, period=1, t0=0, interval='05'):
     '''
     Phase-folds the light curve with a given period and t0.
 
@@ -57,12 +57,13 @@ def phase_fold(times, fluxes, sigmas, period=1, t0=0):
     t0 = 0 if np.isnan(t0) else t0
     phases = np.mod((times-t0)/period, 1.0)
 
-    if isinstance(phases, float):
-        if phases > 0.5:
-            phases -= 1
-    else:
-        # then should be an array
-        phases[phases > 0.5] -= 1
+    if interval == '05':
+        if isinstance(phases, float):
+            if phases > 0.5:
+                phases -= 1
+        else:
+            # then should be an array
+            phases[phases > 0.5] -= 1
         
     s = phases.argsort()
     phases = phases[s]

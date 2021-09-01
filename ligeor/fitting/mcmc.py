@@ -11,7 +11,6 @@ from scipy.interpolate import interp1d
 class EmceeSampler(object):
 
     def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000, **kwargs):
-
         '''
         Initializes a sampler for the light curve stored in 'filename'
         with determined initial values for the period and t0.
@@ -35,27 +34,73 @@ class EmceeSampler(object):
         self._times, self._fluxes, self._sigmas = lc['times'], lc['fluxes'], lc['sigmas']
 
     def initial_fit(self):
+        '''
+        Runs an initial fit to the data with the chosen model (two-Gaussian or polyfit).
+        '''
         # overriden by subclass
         return None
     
-    def logprob(self):
+    def logprob(self, values):
+        '''
+        Computes the logprobability of the sample.
+
+        Parameters
+        ----------
+        values: array-like
+            period (for phase folding) + model values
+        '''
         # overriden by subclass
         return None
 
     def run_sampler(self, nwalkers=32, niters=2000, progress=True):
-        init_vals = self._initial_fit
-        bestfit_vals = np.array([self._period_init, *init_vals])
-        pos = bestfit_vals + 1e-4 * np.random.randn(nwalkers, len(bestfit_vals))
-        nwalkers, ndim = pos.shape
+        '''
+        Initializes and runs an emcee sampler.
         
-        with Pool(1) as pool:
-            sampler = emcee.EnsembleSampler(nwalkers, ndim, self.logprob, pool=pool)
-            sampler.run_mcmc(pos, niters, progress=progress)
-        
-        return sampler
+        Parameters
+        ----------
+        nwalkers: int
+            Number of walkers for emcee.
+        niters: int
+            Number of iterations to run.
+        progress: bool
+            If True, will output the progress (requires tqdm).
+        '''
+        if ~hasattr(self, '_initial_fit'):
+            raise ValueError('Initial fit not found. Run sampler.initial_fit() before calling run_sampler.')
+        else:
+            init_vals = self._initial_fit
+            bestfit_vals = np.array([self._period_init, *init_vals])
+            pos = bestfit_vals + 1e-4 * np.random.randn(nwalkers, len(bestfit_vals))
+            nwalkers, ndim = pos.shape
+            
+            with Pool(1) as pool:
+                sampler = emcee.EnsembleSampler(nwalkers, ndim, self.logprob, pool=pool)
+                sampler.run_mcmc(pos, niters, progress=progress)
+            
+            return sampler
         
 
     def compute_results(self, sampler, burnin = 1000, save_lc=True, save_file='', show=False, failed=False):
+        '''
+        Computes a summary of the results from the sampler.
+
+        The results computed include: ephemerides, model parameters and eclipse parameters. 
+
+        Parameters
+        ----------
+        sampler: object
+            The emcee sampler, initialized and run with .run_sampler()
+        burnin: int
+            Number of initial iterations to discard.
+        save_lc: bool
+            If True, will save the light curve to a file.
+        save_file: str
+            Filename to save to, if save_lc = True.
+        show: bool
+            If True, will show plot of the resulting light curve.
+        failed: bool
+            If True, all computed values are np.nan
+        '''
 
         if save_lc and len(save_file) == 0:
             raise ValueError('Please provide a file name to save the model to or set save_lc=False.')
@@ -66,6 +111,16 @@ class EmceeSampler(object):
         self.compute_eclipse_params(means_blobs, sigmas_low_blobs, sigmas_high_blobs, failed=failed)
 
     def compute_ephemerides(self, sampler, burnin, failed=False):
+        '''
+        Computes mean and standard deviation for the period and t0 from the sample.
+
+        Parameters
+        ----------
+        sampler: object
+            The emcee sampler, initialized and run with .run_sampler()
+        burnin: int
+            Number of initial iterations to discard.
+        '''
 
         if failed:
             self._period_mcmc = {'value': np.nan,
@@ -156,6 +211,19 @@ class EmceeSampler(object):
 
 
     def save_results_to_file(self, results_file, type='ephemerides', ind=''):
+        '''
+        Save the resulting ephemerides, model or eclipse parameters to a file.
+
+        Parameters
+        ----------
+        results_file: str
+            Filename to save to
+        type: str
+            Which parameters to store. Available choices: ['ephemerides', 'model_values', 'eclipse_parameters']
+        ind: str
+            Index of the object (if looping through a list, otherwise optional)
+        '''
+
         if type=='ephemerides':
             with open(results_file, 'a') as f:
                 f.write('{},{},{},{},{},{},{},{}\n'.format(ind,
@@ -200,12 +268,46 @@ class EmceeSampler(object):
             raise NotImplementedError
 
 
-    def compute_model(self, means, sigmas_low, sigmas_high):
+    def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True, save_file='', show=False, failed=False):
+        '''
+        Computes the model parameter values from the sample.
+
+        Parameters
+        ----------
+        means: array-like
+            Mean values from the sample
+        sigmas_low: array-like
+            Standard deviation of samples < mean
+        sigmas_high: array_like
+            Standard deviation of samples > mean
+        save_lc: bool
+            If True, saves the model light curve to a file
+        save_file: str
+            File name to save light curve to, if save_lc=True.
+        show: bool
+            If True, will display a plot of the model light curve.
+        failed: bool
+            If True, all model parameters are np.nan
+        '''
         # overriden by subclass
         return None
 
 
     def compute_eclipse_params(self, means, sigmas_low, sigmas_high, failed=False):
+        '''
+        Computes the model parameter values from the sample.
+
+        Parameters
+        ----------
+        means: array-like
+            Mean values from the sample
+        sigmas_low: array-like
+            Standard deviation of samples < mean
+        sigmas_high: array_like
+            Standard deviation of samples > mean
+        failed: bool
+            If true, all eclipse parameters are np.nan
+        '''
         # pos1, width1, depth1, pos2, width2, depth2, ecl1_area, ecl2_area, residuals_mean, residuals_stdev
         eclipse_params = {'pos1': np.nan, 'width1': np.nan, 'depth1': np.nan, 
                           'pos2': np.nan, 'width2': np.nan, 'depth2': np.nan,
@@ -228,8 +330,6 @@ class EmceeSampler(object):
         
         self._eclipse_params = eclipse_params
         self._eclipse_params_errs = eclipse_params_err
-
-
 
 
 class EmceeSamplerTwoGaussian(EmceeSampler):

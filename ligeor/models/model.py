@@ -43,6 +43,9 @@ class Model(object):
 
 
     def interactive_eclipse(self):
+        '''
+        Displays an interactive plot with draggable lines for the eclipse edges and positions.
+        '''
 
         from ligeor.utils.interactive import DraggableLine
         phases_w, fluxes_w, sigmas_w = extend_phasefolded_lc(self.phases, self.fluxes, self.sigmas)
@@ -101,6 +104,14 @@ class Model(object):
 
 
     def check_eclipses_credibility(self):
+        '''
+        Checks if the detected eclipses are statistically significant.
+
+        The checks performed are:
+        - whether the eclipse is fitted to a noise feature. If True, the eclipse parameters are discarded.
+        - whether the two detected eclipses overlap. If True, only the shallower eclipse is discarded.
+        '''
+        
         eclipse_params = self.eclipse_params.copy()
         if hasattr(self, 'eclipse_params'):
 

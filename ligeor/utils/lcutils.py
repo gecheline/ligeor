@@ -42,6 +42,8 @@ def phase_fold(times, fluxes, sigmas, period=1, t0=0, interval='05'):
         Observed fluxes corresponding to each time in times
     sigmas: array-like
         Uncertainties corresponding to each flux in fluxes
+    interval: str
+        Phase range to be returned, [-0.5,0.5] if interval='05' or [0.,1.] if interval='01'.
 
 
     Returns
@@ -107,6 +109,19 @@ def extend_phasefolded_lc(phases, fluxes, sigmas):
 def check_eclipse_fitting_noise(fluxes_model, fluxes_obs, depth):
     '''
     Checks if the model eclipses are true or fit data noise features.
+
+    Parameters
+    ----------
+    fluxes_model: array-like
+        Fluxes computed from the model
+    fluxes_obs: array-like
+        Observed fluxes
+    depth: float
+        Depth of the eclipse
+
+    Returns
+    -------
+    bool
     '''
 
     sigma_res = np.std(fluxes_obs - fluxes_model)
@@ -119,6 +134,15 @@ def check_eclipse_fitting_noise(fluxes_model, fluxes_obs, depth):
 def check_eclipse_fitting_cosine(width):
     '''
     Checks if an eclipse is fitted to the out-of-eclipse variability.
+
+    Parameters
+    ----------
+    width: float
+        Measured width of the eclipse from the model.
+
+    Returns
+    -------
+    bool
     '''
     if width >= 0.5:
         return True
@@ -128,6 +152,14 @@ def check_eclipse_fitting_cosine(width):
 def check_eclipse_depth_negative(depth):
     '''
     Checks if an eclipse is fitting another feature that does not show a decrease in flux.
+    Parameters
+    ----------
+    depth: float
+        Measured depth of the eclipse from the model.
+
+    Returns
+    -------
+    bool
     '''
     if depth <= 0.0:
         return True

@@ -10,3 +10,5 @@ ligeor.egg-info/
 test_notebooks/.ipynb_checkpoints/
 
 data/.ipynb_checkpoints/
+
+.vscode/

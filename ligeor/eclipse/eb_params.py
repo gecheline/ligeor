@@ -53,13 +53,16 @@ class EbParams(object):
 
     @staticmethod
     def _f (psi, sep): # used in pf_ecc_psi_w
+        '''Returns the function to minimize for Psi'''
         return psi - sin(psi) - 2*pi*sep
 
     @staticmethod
     def _df (psi, sep): # used in pf_ecc_psi_w
+        '''Returns the derivative of f for minimization'''
         return 1 - cos(psi) +1e-6
 
     def _ecc_w(self):
+        '''Computes eccentricity and argument of periastron from the separation and widths.'''
 
         if np.isnan(self.sep) or np.isnan(self.width1) or np.isnan(self.width2):
             print('Cannot esimate eccentricty and argument of periastron: incomplete geometry information')
@@ -84,28 +87,46 @@ class EbParams(object):
 
 
     def _t0_from_geometry(self, times, period=1, t0_supconj = 0, t0_near_times = True):
+        '''
+        Computes a new value for t0 from the position of the primary eclipse.
 
-            delta_t0 = self.pos1*period
-            t0 = t0_supconj + delta_t0
+        Parameters
+        ----------
+        times: array-like
+            Array of observed times
+        period: float
+            Orbital period of the object
+        t0_supconj: float
+            Initial t0 value (before fitting), if available. Default is 0.
+        t0_near_times: bool
+            If True, the computed t0 will be shifted to fall within the range of observed times.
+        '''
 
-            if t0_near_times:
-                if t0 >= times.min() and t0 <= times.max():
-                    return t0
-                else:
-                    return t0 + int((times.min()/period)+1)*(period)
-            else:
+        delta_t0 = self.pos1*period
+        t0 = t0_supconj + delta_t0
+
+        if t0_near_times:
+            if t0 >= times.min() and t0 <= times.max():
                 return t0
+            else:
+                return t0 + int((times.min()/period)+1)*(period)
+        else:
+            return t0
         
 
     def _teffratio(self):
         '''
-        This holds only under the assumption of ecc=0, but it's the best first analytical guess we can get.
+        Computes the temprature ratio from eclipse depths.
+
+        Holds only under the assumption of ecc=0, but it's the best first analytical guess we can get.
         '''
         self.teffratio = (self.depth2/self.depth1)**0.25
 
     
     def _rsum(self):
         '''
+        Computes the sum of fractional radii from the eclipse widths, eccentricity and argument of periastron.
+
         The full equation for the eclipse widths contains a factor that depends on cos(incl) and requivratio.
         If we assume incl=90, that factor is 0 and the remaining is what we use to derive the equations for
         requivsum based on the widths of the primary and secondary eclipse below.
@@ -116,6 +137,18 @@ class EbParams(object):
 
 
     def refine_with_ellc(self, phases, fluxes, sigmas):
+        '''
+        Refines the eclipse fits with an ellc light curve.
+
+        Parameters
+        ----------
+        phases: array-like
+            Orbital phases of the observed light curve
+        fluxes: array-like
+            Observed fluxes
+        sigmas: array-like
+            Flux uncertainities
+        '''
         try:
             import ellc
         except:

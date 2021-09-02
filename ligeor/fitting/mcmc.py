@@ -25,6 +25,8 @@ class EmceeSampler(object):
             Initial value of the time of superior conjunction (t0)
         n_downsample: int
             Number of data points to skip in raw light curve for downsampling
+        nbins: int
+            Number of bins (applies to the computed final model).
         '''
         self._filename = filename
         self._nbins = nbins
@@ -335,10 +337,31 @@ class EmceeSampler(object):
 class EmceeSamplerTwoGaussian(EmceeSampler):
 
     def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000, **kwargs):
+        '''
+        Initializes a TwoGaussian sampler for the light curve stored in 'filename'
+        with determined initial values for the period and t0.
+
+        Parameters
+        ----------
+        filename: str
+            Filename to load the raw light curve from (expected format: times, fluxes, sigmas)
+        period_init: float
+            Initial value of the period (from code/triage)
+        t0_init: float
+            Initial value of the time of superior conjunction (t0)
+        n_downsample: int
+            Number of data points to skip in raw light curve for downsampling
+        nbins: int
+            Number of bins (applies to the computed final model).
+        '''
+        
         super(EmceeSamplerTwoGaussian,self).__init__(filename, period_init, t0_init, n_downsample, nbins, **kwargs)
 
 
     def initial_fit(self):
+        '''
+        Runs an initial fit to the data with the chosen model (two-Gaussian or polyfit).
+        '''
         phases, fluxes_ph, sigmas_ph = phase_fold(self._times, 
                                                         self._fluxes, 
                                                         self._sigmas, 
@@ -359,6 +382,14 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
 
 
     def logprob(self, values):
+        '''
+        Computes the logprobability of the sample.
+
+        Parameters
+        ----------
+        values: array-like
+            period (for phase folding) + model values
+        '''
 
         fmax = self._fluxes.max()
         fmin = self._fluxes.min()
@@ -440,6 +471,27 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
 
     
     def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True, save_file='', show=False, failed=False):
+        '''
+        Computes the model parameter values from the sample.
+
+        Parameters
+        ----------
+        means: array-like
+            Mean values from the sample
+        sigmas_low: array-like
+            Standard deviation of samples < mean
+        sigmas_high: array_like
+            Standard deviation of samples > mean
+        save_lc: bool
+            If True, saves the model light curve to a file
+        save_file: str
+            File name to save light curve to, if save_lc=True.
+        show: bool
+            If True, will display a plot of the model light curve.
+        failed: bool
+            If True, all model parameters are np.nan
+        '''        
+        
         model_results = {'C': np.nan, 'mu1': np.nan, 'd1': np.nan, 'sigma1': np.nan, 
                         'mu2': np.nan, 'd2': np.nan, 'sigma2': np.nan, 'Aell': np.nan, 'phi0': np.nan
                         }
@@ -489,11 +541,32 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
 class EmceeSamplerPolyfit(EmceeSampler):
 
     def __init__(self, filename, period_init, t0_init, n_downsample=0, nbins=1000, **kwargs):
+        '''
+        Initializes a sampler for the light curve stored in 'filename'
+        with determined initial values for the period and t0.
+
+        Parameters
+        ----------
+        filename: str
+            Filename to load the raw light curve from (expected format: times, fluxes, sigmas)
+        period_init: float
+            Initial value of the period (from code/triage)
+        t0_init: float
+            Initial value of the time of superior conjunction (t0)
+        n_downsample: int
+            Number of data points to skip in raw light curve for downsampling
+        nbins: int
+            Number of bins (applies to the computed final model).
+        '''
+        
         super(EmceeSamplerPolyfit,self).__init__(filename, period_init, t0_init, n_downsample, nbins, **kwargs)
 
 
     def initial_fit(self, knots = [], coeffs = []):
-
+        '''
+        Runs an initial fit to the data with the chosen model (two-Gaussian or polyfit).
+        '''
+        
         if len(knots) == 0:
             phases, fluxes_ph, sigmas_ph = phase_fold(self._times, 
                                                             self._fluxes, 
@@ -534,7 +607,14 @@ class EmceeSamplerPolyfit(EmceeSampler):
             self._bounds.append([value-0.1,value+0.1*value])
 
     def logprob(self, values):
+        '''
+        Computes the logprobability of the sample.
 
+        Parameters
+        ----------
+        values: array-like
+            period (for phase folding) + model values
+        '''
         # bounds = [[-1e-5,-1e-5,-1e-5,-1e-5],[1+1e-5,1+1e-5,1+1e-5,1+1e-5]]
         # bounds = [[-1,-1,-1,-1],[2,2,2,2]]
         period, *model_vals = values
@@ -573,6 +653,27 @@ class EmceeSamplerPolyfit(EmceeSampler):
 
 
     def compute_model(self, means, sigmas_low, sigmas_high, save_lc = True, save_file='', show=False, failed=False):
+        '''
+        Computes the model parameter values from the sample.
+
+        Parameters
+        ----------
+        means: array-like
+            Mean values from the sample
+        sigmas_low: array-like
+            Standard deviation of samples < mean
+        sigmas_high: array_like
+            Standard deviation of samples > mean
+        save_lc: bool
+            If True, saves the model light curve to a file
+        save_file: str
+            File name to save light curve to, if save_lc=True.
+        show: bool
+            If True, will display a plot of the model light curve.
+        failed: bool
+            If True, all model parameters are np.nan
+        '''
+                
         model_results = {'k1': np.nan, 'k2': np.nan, 'k3': np.nan, 'k4': np.nan,
                         'c11': np.nan, 'c12': np.nan, 'c13': np.nan,
                         'c21': np.nan, 'c22': np.nan, 'c23': np.nan,

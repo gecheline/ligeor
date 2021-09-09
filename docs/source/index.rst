@@ -53,11 +53,10 @@ For different use cases, including non-phase folded light curves, see the Exampl
    from ligeor import EmceeSamplerPolyfit 
 
    sampler = EmceeSamplerPolyfit(filename, period, t0, delimiter=' ', usecols = (0,1,2))
-   sampler.initial_fit()
-   samples = sampler.run_sampler()
-   sampler.compute_results(samples, burnin=1000)
+   sampler.run_sampler()
+   sampler.compute_results(burnin=1000)
 
-
+For more detailed description of each usecase and viewing/storing results, see the Examples.
 
 
 .. toctree::

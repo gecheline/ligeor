@@ -325,7 +325,7 @@ class Polyfit(Model):
         self.compute_eclipse_area(ecl=1)
         self.compute_eclipse_area(ecl=2)
 
-        self.eclipse_params = self.check_eclipses_credibility()
+        # self.eclipse_params = self.check_eclipses_credibility()
 
         # check if eclipses need to be swapped:
         if ~np.isnan(self.eclipse_params['secondary_depth']) and ~np.isnan(self.eclipse_params['primary_depth']): 

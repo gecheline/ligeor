@@ -49,9 +49,30 @@ class TwoGaussianModel(Model):
                 }
 
 
-  
+    def isolate_param_vals_for_model(self, model_params, func):
+        '''
+        Isolates only parameter values pertaining to a model "func",
+        assuming model params contains the union of all possible parameters.
+        
+        Parameters
+        ----------
+        model_params: dict
+            Dictionary containing all possible parameters and their values (some can be nan!)
+            Keys: 'C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell', 'phi0'
+            
+        Returns
+        -------
+        param_vals: array-like
+            A subset of the parameter values required to compute "func".
+        '''
+        param_vals = np.zeros(len(self.params[func]))
+        for i,key in enumerate(self.params[func]):
+            param_vals[i] = model_params[key]
+            
+        return param_vals
 
-    def fit(self):
+
+    def fit(self, fit_funcs=[], param_vals=[]):
         '''
         Computes all two-gaussian models and chooses the best fit.
 
@@ -61,9 +82,23 @@ class TwoGaussianModel(Model):
             3. compute each model's BIC value
             4. assign the model with highest BIC as the 'best fit'
         '''
+        self.fits = {}
+        self.best_fit = {}
+        
+        if len(fit_funcs) != 0:
+            # the best fit function has been provided by the user
 
-        self.fit_twoGaussian_models()
-        # compute all model light curves
+            if len(param_vals) == 0:
+                # we need to fit just that one
+                self.fit_twoGaussian_models(funcs=fit_funcs)
+            else:
+                for i,key in enumerate(fit_funcs):
+                    self.fits[key] = param_vals[i]
+ 
+        else:
+            self.fit_twoGaussian_models()
+            # compute all model light curves
+
         self.compute_twoGaussian_models()
         # compute corresponding BIC values
         self.compute_twoGaussian_models_BIC()
@@ -71,13 +106,11 @@ class TwoGaussianModel(Model):
         # best_fit_func = self.check_fit()
         # choose the best fit as the one with highest BIC
         best_fit_func = list(self.models.keys())[np.nanargmax(list(self.bics.values()))]
-
-        self.best_fit = {}
         self.best_fit['func'] = best_fit_func
-        self.best_fit['model'] = self.models[best_fit_func]
         self.best_fit['param_vals'] = self.fits[best_fit_func]
         self.best_fit['param_names'] = self.params[best_fit_func]
-        self.model = self.best_fit['model']
+            
+        self.model = self.models[best_fit_func]
 
 
     def save_model(self, nbins=1000, func='', param_values = [], save_file=''):
@@ -497,7 +530,8 @@ class TwoGaussianModel(Model):
             # return {'ecl_positions': [pos1, pos2], 'ecl_widths': [edge1r-edge1l, edge2r-edge2l]}
             return {'ecl_positions': [pos1, pos2], 'ecl_widths': [0.005, 0.005]}
         
-    def fit_twoGaussian_models(self, init_pos=[], init_widths=[]):
+    def fit_twoGaussian_models(self, init_pos=[], init_widths=[], 
+                               funcs=['C', 'CE', 'CG', 'CGE', 'CG12', 'CG12E1', 'CG12E2']):
         '''
         Fits all seven models to the input light curve.
         '''
@@ -544,19 +578,16 @@ class TwoGaussianModel(Model):
             'CG12E1': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff)),
             'CG12E2': ((0.,-0.5, 0., 0., -0.5, 0., 0., 1e-6),(fmax, 0.5, fdiff, 0.5, 0.5, fdiff, 0.5, fdiff))}
 
-        fits = {}
 
         # extend light curve on phase range [-1,1]
         phases_ext, fluxes_ext, sigmas_ext = extend_phasefolded_lc(self.phases, self.fluxes, self.sigmas)
 
-        for key in self.twogfuncs.keys():
+        for key in funcs:
             try:
-                fits[key] = curve_fit(self.twogfuncs[key], phases_ext, fluxes_ext, p0=init_params[key], sigma=sigmas_ext, bounds=bounds[key])
+                self.fits[key] = curve_fit(self.twogfuncs[key], phases_ext, fluxes_ext, p0=init_params[key], sigma=sigmas_ext, bounds=bounds[key])[0]
             except Exception as err:
                 print("2G model {} failed with error: {}".format(key, err))
-                fits[key] = np.array([np.nan*np.ones(len(init_params[key]))])
-
-        self.fits = fits
+                self.fits[key] = np.array([np.nan*np.ones(len(init_params[key]))])
 
 
     def compute_twoGaussian_models(self):
@@ -566,7 +597,7 @@ class TwoGaussianModel(Model):
         models = {}
 
         for fkey in self.fits.keys():
-            models[fkey] = self.twogfuncs[fkey](self.phases, *self.fits[fkey][0])
+            models[fkey] = self.twogfuncs[fkey](self.phases, *self.fits[fkey])
 
         self.models = models
 
@@ -608,7 +639,7 @@ class TwoGaussianModel(Model):
             A dictionary of the eclipse paramter values.
         '''
 
-        param_vals = self.best_fit['param_vals'][0]
+        param_vals = self.best_fit['param_vals']
         param_names = self.best_fit['param_names']
 
         # gather values from the best fit solution
@@ -621,16 +652,16 @@ class TwoGaussianModel(Model):
         # compute and adjust all available parameters, otherwise the entire eclipse is nan
         if not np.isnan(mu1) and not np.isnan(sigma1) and np.abs(sigma1) < 0.5:
             pos1 = mu1
-            width1 = min(5.6*np.abs(sigma1), 0.499)
-            depth1 = C - self.fluxes[np.argmin(np.abs(self.phases-pos1))]
+            width1 = 5.6*np.abs(sigma1)
+            depth1 = C - self.twogfuncs[self.best_fit['func']]([pos1], *self.best_fit['param_vals'])[0]
         else:
             pos1 = np.nan
             width1 = np.nan
             depth1 = np.nan
         if not np.isnan(mu2) and not np.isnan(sigma2) and np.abs(sigma2) < 0.5:
             pos2 = mu2
-            width2 = min(5.6*np.abs(sigma2), 0.499)
-            depth2 = C - self.fluxes[np.argmin(np.abs(self.phases-pos2))]
+            width2 = 5.6*np.abs(sigma2)
+            depth2 = C - self.twogfuncs[self.best_fit['func']]([pos2], *self.best_fit['param_vals'])[0]
         else:
             pos2 = np.nan
             width2 = np.nan
@@ -668,7 +699,7 @@ class TwoGaussianModel(Model):
            self.interactive_eclipse()
         self.compute_eclipse_area(ecl=1)
         self.compute_eclipse_area(ecl=2)
-        self.eclipse_params = self.check_eclipses_credibility()
+        # self.eclipse_params = self.check_eclipses_credibility()
 
         # check if eclipses need to be swapped:
         if ~np.isnan(self.eclipse_params['primary_depth']) and ~np.isnan(self.eclipse_params['secondary_depth']):
@@ -749,9 +780,9 @@ class TwoGaussianModel(Model):
                 sigma_ind = self.best_fit['param_names'].index('sigma%i' % ecl)
                 d_ind = self.best_fit['param_names'].index('d%i' % ecl)
                 
-                mu = self.best_fit['param_vals'][0][mu_ind]
-                sigma = self.best_fit['param_vals'][0][sigma_ind]
-                d = self.best_fit['param_vals'][0][d_ind]
+                mu = self.best_fit['param_vals'][mu_ind]
+                sigma = self.best_fit['param_vals'][sigma_ind]
+                d = self.best_fit['param_vals'][d_ind]
                 phi_top = mu + 2.8*sigma
                 phi_bottom = mu - 2.8*sigma
 
@@ -765,9 +796,9 @@ class TwoGaussianModel(Model):
                 sigma_ind = self.best_fit['param_names'].index('sigma%i' % ecl)
                 d_ind = self.best_fit['param_names'].index('d%i' % ecl)
                 
-                mu = self.best_fit['param_vals'][0][mu_ind]
-                sigma = self.best_fit['param_vals'][0][sigma_ind]
-                d = self.best_fit['param_vals'][0][d_ind]
+                mu = self.best_fit['param_vals'][mu_ind]
+                sigma = self.best_fit['param_vals'][sigma_ind]
+                d = self.best_fit['param_vals'][d_ind]
                 phi_top = mu + 2.8*sigma
                 phi_bottom = mu - 2.8*sigma
 

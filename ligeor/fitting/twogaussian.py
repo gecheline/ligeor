@@ -74,7 +74,7 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
         # self._twogModel_init = twogModel
         self._func = twogModel.best_fit['func']
         self._model_params = twogModel.best_fit['param_names']
-        self._initial_fit = twogModel.best_fit['param_vals'][0]
+        self._initial_fit = twogModel.best_fit['param_vals']
 
 
     def logprob(self, values):
@@ -115,53 +115,19 @@ class EmceeSamplerTwoGaussian(EmceeSampler):
                                                         interval='05')
         # compute model with the selected twog function
         # TODO: review this part for potentially more efficient option
-        twog_func = getattr(TwoGaussianModel, self._func.lower())
-        model = twog_func(phases, *model_vals)
-
-        C = model_vals[self._model_params.index('C')]
-        if self._func in ['CG', 'CGE']:
-
-            mu = model_vals[self._model_params.index('mu1')]
-            sigma = model_vals[self._model_params.index('sigma1')]
-            d = model_vals[self._model_params.index('d1')]
-            
-            # compute eclipse parameters
-            pos1, pos2 = mu, np.nan
-            width1, width2 = 5.6*sigma, np.nan 
-            depth1, depth2 = C - fluxes_ph[np.argmin(np.abs(phases-pos1))], np.nan
-
-            # compute eclipse area
-            phi_top = mu + 2.8*sigma
-            phi_bottom = mu - 2.8*sigma
-            ecl1_area = TwoGaussianModel.compute_gaussian_area(mu, sigma, d, phi_bottom, phi_top)
-            ecl2_area = np.nan
+        twog = TwoGaussianModel(phases=phases, 
+                                    fluxes=fluxes_ph, 
+                                    sigmas=sigmas_ph)
+        twog.fit(fit_funcs=[self._func], param_vals=[model_vals])
         
-        elif self._func in ['CG12', 'CG12E1', 'CG12E2']:
-            mu1_ind, mu2_ind = self._model_params.index('mu1'), self._model_params.index('mu2')
-            sigma1_ind, sigma2_ind = self._model_params.index('sigma1'), self._model_params.index('sigma2')
-            d1_ind, d2_ind = self._model_params.index('d1'), self._model_params.index('d2')
-            
-            mu1, mu2 = model_vals[mu1_ind], model_vals[mu2_ind]
-            sigma1, sigma2 = model_vals[sigma1_ind], model_vals[sigma2_ind]
-            d1, d2 = model_vals[d1_ind], model_vals[d2_ind]
+        eclipse_dir = twog.compute_eclipse_params()
+        pos1, pos2 = eclipse_dir['primary_position'], eclipse_dir['secondary_position']
+        width1, width2 = eclipse_dir['primary_width'], eclipse_dir['secondary_width']
+        depth1, depth2 = eclipse_dir['primary_depth'], eclipse_dir['secondary_depth']
+        ecl1_area, ecl2_area = twog.eclipse_area[1], twog.eclipse_area[2]
+        residuals_mean, residuals_stdev = compute_residuals_stdev(fluxes_ph, twog.model)
 
-            # compute eclipse parameters
-            pos1, pos2 = mu1, mu2
-            width1, width2 = 5.6*sigma1, 5.6*sigma2 
-            depth1, depth2 = C - fluxes_ph[np.argmin(np.abs(phases-pos1))], C - fluxes_ph[np.argmin(np.abs(phases-pos2))]
-
-            phi1_top, phi2_top = mu1 + 2.8*sigma1, mu2 + 2.8*sigma2
-            phi1_bottom, phi2_bottom = mu2 - 2.8*sigma2, mu2-2.8*sigma2
-            ecl1_area = TwoGaussianModel.compute_gaussian_area(mu1, sigma1, d1, phi1_bottom, phi1_top)
-            ecl2_area = TwoGaussianModel.compute_gaussian_area(mu2, sigma2, d2, phi2_bottom, phi2_top)
-
-        else:
-            pos1, pos2, width1, width2, depth1, depth2 = np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-            ecl1_area, ecl2_area = np.nan, np.nan
-
-        residuals_mean, residuals_stdev = compute_residuals_stdev(fluxes_ph, model)
-        # print('residuals: ', residuals_mean, residuals_stdev)
-        logprob = -0.5*(np.sum((fluxes_ph-model)**2/sigmas_ph**2))
+        logprob = -0.5*(np.sum((fluxes_ph-twog.model)**2/sigmas_ph**2))
         # print(logprob, pos1, width1, depth1, pos2, width2, depth2)#, ecl1_area, ecl2_area, residuals_mean, residuals_stdev)
         return logprob, pos1, width1, depth1, pos2, width2, depth2, ecl1_area, ecl2_area, residuals_mean, residuals_stdev
 

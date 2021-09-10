@@ -144,7 +144,7 @@ def check_eclipse_fitting_cosine(width):
     -------
     bool
     '''
-    if width >= 0.4:
+    if width >= 0.41:
         return True
     else:
         return False

@@ -257,7 +257,7 @@ class Polyfit(Model):
         # print(knots)
         # print(knot_fvs)
 
-        plt.plot(self.sdata[:,0], self.sdata[:,1], 'b.')
+        plt.plot(self.phases, self.fluxes, 'b.')
         plt.plot(knots, knot_fvs, 'ms')
         plt.plot(d[:,0], d[:,1], 'r-')
 
@@ -293,28 +293,87 @@ class Polyfit(Model):
         '''
         ext_x = self.extremes
         ext_y = self.fv(x=ext_x)
-        # fv for x=np.nan doesn't return nan!
-        #TODO: troubleshoot .fv for a discrete set of values and why np.nan results in a value
-        ext_y[np.isnan(self.extremes)] = np.nan
-        eclipse_args = np.argsort(ext_y)[:2]
-
-        # let's extend the knots array left and right so it's continuous (for computing the width)
+        knots_x = self.knots
         knots_extended = np.hstack((self.knots-1, self.knots, self.knots+1))
 
-        knots1 = np.array([knots_extended[eclipse_args[0]+4], knots_extended[eclipse_args[0]+5]])
-        knots2 = np.array([knots_extended[eclipse_args[1]+4], knots_extended[eclipse_args[1]+5]])
+        xs_all = np.hstack((np.array(ext_x), np.array(knots_x))).flatten()
+        ys_all = self.fv(x=xs_all)
+        ys_labels = np.array(['ext', 'ext', 'ext', 'ext', 'knot', 'knot', 'knot', 'knot'])
+        sort = np.argsort(ys_all)
+        if ys_labels[sort][0] == 'knot' and ys_labels[sort][1] == 'ext':
+            # no primary eclipse, just log details of secondary
+            primary_pos = xs_all[sort][0]
+            eclipse_arg = np.argwhere(ext_x == xs_all[sort][1]).flatten()[0]
+            knots_ecl = np.array([knots_extended[eclipse_arg+4], knots_extended[eclipse_arg+5]])
+            mean_outofecl = self.fv(knots_ecl).mean()
+            
+            self.eclipse_params = {
+            'primary_width': np.nan,
+            'secondary_width': np.abs(knots_ecl[1]-knots_ecl[0]),
+            'primary_position': np.nan,
+            'secondary_position': ext_x[eclipse_arg],
+            'primary_depth': np.nan,
+            'secondary_depth': mean_outofecl - ext_y[eclipse_arg],
+            'eclipse_edges': np.hstack((np.array([np.nan,np.nan]), knots_ecl)),
+            'eclipse_coeffs': [np.nan*np.ones((3)), self.coeffs[eclipse_arg]]
+        }
+            
+        if ys_labels[sort][0] == 'ext' and ys_labels[sort][1] == 'knot':
+                # no primary eclipse, just log details of secondary
+            secondary_pos = xs_all[sort][1]
+            eclipse_arg = np.argwhere(ext_x == xs_all[sort][0]).flatten()[0]
+            knots_ecl = np.array([knots_extended[eclipse_arg+4], knots_extended[eclipse_arg+5]])
+            mean_outofecl = self.fv(knots_ecl).mean()
+            
+            self.eclipse_params = {
+            'primary_width': np.abs(knots_ecl[1]-knots_ecl[0]),
+            'secondary_width': np.nan,
+            'primary_position': ext_x[eclipse_arg],
+            'secondary_position': np.nan,
+            'primary_depth': mean_outofecl - ext_y[eclipse_arg],
+            'secondary_depth': np.nan,
+            'eclipse_edges': np.hstack((knots_ecl, np.array([np.nan,np.nan]))),
+            'eclipse_coeffs': [self.coeffs[eclipse_arg], np.nan*np.ones((3))]
+        }
+        
+        
+        if ys_labels[sort][0] == 'ext' and ys_labels[sort][1] == 'ext':
+            # fv for x=np.nan doesn't return nan!
+            #TODO: troubleshoot .fv for a discrete set of values and why np.nan results in a value
+            ext_y[np.isnan(self.extremes)] = np.nan
+            eclipse_args = np.argsort(ext_y)[:2]
 
-        mean_outofecl = self.fv(np.hstack((knots1, knots2))).mean()
+            # let's extend the knots array left and right so it's continuous (for computing the width)
+            knots1 = np.array([knots_extended[eclipse_args[0]+4], knots_extended[eclipse_args[0]+5]])
+            knots2 = np.array([knots_extended[eclipse_args[1]+4], knots_extended[eclipse_args[1]+5]])
 
-        self.eclipse_params = {
-            'primary_width': np.abs(knots1[1]-knots1[0]),
-            'secondary_width': np.abs(knots2[1]-knots2[0]),
-            'primary_position': ext_x[eclipse_args[0]],
-            'secondary_position': ext_x[eclipse_args[1]],
-            'primary_depth': mean_outofecl - ext_y[eclipse_args[0]],
-            'secondary_depth': mean_outofecl - ext_y[eclipse_args[1]],
-            'eclipse_edges': np.hstack((knots1, knots2)),
-            'eclipse_coeffs': [self.coeffs[eclipse_args[0]], self.coeffs[eclipse_args[1]]]
+            mean_outofecl = self.fv(np.hstack((knots1, knots2))).mean()
+
+            self.eclipse_params = {
+                'primary_width': np.abs(knots1[1]-knots1[0]),
+                'secondary_width': np.abs(knots2[1]-knots2[0]),
+                'primary_position': ext_x[eclipse_args[0]],
+                'secondary_position': ext_x[eclipse_args[1]],
+                'primary_depth': mean_outofecl - ext_y[eclipse_args[0]],
+                'secondary_depth': mean_outofecl - ext_y[eclipse_args[1]],
+                'eclipse_edges': np.hstack((knots1, knots2)),
+                'eclipse_coeffs': [self.coeffs[eclipse_args[0]], self.coeffs[eclipse_args[1]]]
+            }
+        
+        if ys_labels[sort][0] == 'knot' and ys_labels[sort][1] == 'knot':
+                # no primary eclipse, just log details of secondary
+            primary_pos = xs_all[sort][0]
+            secondary_pos = xs_all[sort][1]
+
+            self.eclipse_params = {
+            'primary_width': np.nan,
+            'secondary_width': np.nan,
+            'primary_position': primary_pos,
+            'secondary_position': secondary_pos,
+            'primary_depth': np.nan,
+            'secondary_depth': np.nan,
+            'eclipse_edges': np.array([np.nan, np.nan, np.nan, np.nan]),
+            'eclipse_coeffs': [np.nan*np.ones((3)), np.nan*np.ones((3))]
         }
 
 

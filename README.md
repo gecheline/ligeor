@@ -21,8 +21,9 @@ and optionally, to run distribution math:
    * distl
 
 Install *ligeor* from pip
-
-   pip install ligeor
+```
+pip install ligeor
+```
 
 or from source
 ```
@@ -33,20 +34,21 @@ python setup.py install # --user (if local installation, otherwise global)
 ### Basic Usage
 
 **Fitting a model to a light curve**
+```
+from ligeor import TwoGaussianModel
 
-   from ligeor import TwoGaussianModel
-
-   model = TwoGaussianModel(filename=filename, delimiter=',', usecols=(0,1,2), phase_folded=True)
-   model.fit()
-   model.plot()
-   _ = model.compute_eclipse_params()
-   print(model.eclipse_params)
-
+model = TwoGaussianModel(filename=filename, delimiter=',', usecols=(0,1,2), phase_folded=True)
+model.fit()
+model.plot()
+_ = model.compute_eclipse_params()
+print(model.eclipse_params)
+```
 
 **MCMC for ephemerides refinement and eclipse parameter distributions**
+```
+from ligeor import EmceeSamplerPolyfit 
 
-   from ligeor import EmceeSamplerPolyfit 
-
-   sampler = EmceeSamplerPolyfit(filename, period, t0, delimiter=' ', usecols = (0,1,2))
-   sampler.run_sampler()
-   sampler.compute_results(burnin=1000)
+sampler = EmceeSamplerPolyfit(filename, period, t0, delimiter=' ', usecols = (0,1,2))
+sampler.run_sampler()
+sampler.compute_results(burnin=1000)
+```

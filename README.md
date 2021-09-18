@@ -34,13 +34,9 @@ or from source
 
    from ligeor import TwoGaussianModel
 
-   # initialize a model from a filename containing phases, fluxes and sigmas
    model = TwoGaussianModel(filename=filename, delimiter=',', usecols=(0,1,2), phase_folded=True)
-   # fit the model
    model.fit()
-   # plot the model
    model.plot()
-   # compute the eclipse parameters
    _ = model.compute_eclipse_params()
    print(model.eclipse_params)
 

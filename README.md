@@ -1,4 +1,4 @@
-### ligeor
+# ligeor
 
 *ligeor* (LIght curve GEOmetRy) fits analytical models to eclipsing binary light curves, 
 designed to quickly estimate the geometric properties of the eclipses: positions, widths and depths.
@@ -11,7 +11,7 @@ In addition to being able to fit an analytical model, samplers are build on top 
 The result of the fitting and/or sampling is geometrical eclipse parameter estimates (positions, widths and depths) that can serve as a starting point in more robust analysis.
 
 
-#### Getting Started
+### Getting Started
 
 *ligeor* depends on the following packages:
    * numpy
@@ -21,14 +21,16 @@ and optionally, to run distribution math:
    * distl
 
 Install *ligeor* from pip
+
    pip install ligeor
 
 or from source
-   python setup.py build
-   python setup.py install # --user (if local installation, otherwise global)
+```
+python setup.py build
+python setup.py install # --user (if local installation, otherwise global)
+```
 
-
-#### Basic Usage
+### Basic Usage
 
 **Fitting a model to a light curve**
 

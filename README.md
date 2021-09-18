@@ -17,6 +17,7 @@ The result of the fitting and/or sampling is geometrical eclipse parameter estim
    * numpy
    * scipy
    * emcee
+   
 and optionally, to run distribution math:
    * distl
 

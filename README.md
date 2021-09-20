@@ -1,5 +1,7 @@
 # ligeor
 
+![logo](logo2.png)
+
 *ligeor* (LIght curve GEOmetRy) fits analytical models to eclipsing binary light curves, 
 designed to quickly estimate the geometric properties of the eclipses: positions, widths and depths.
 Additionally, you can use the built-in MCMC samplers to refine the ephemerides and provide 
@@ -17,7 +19,7 @@ The result of the fitting and/or sampling is geometrical eclipse parameter estim
    * numpy
    * scipy
    * emcee
-   
+
 and optionally, to run distribution math:
    * distl
 

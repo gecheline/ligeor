@@ -1,6 +1,6 @@
 # ligeor
 
-![logo](logo2.png)
+<img src="logo2.png" alt="ligeor logo" width="200"/>
 
 *ligeor* (LIght curve GEOmetRy) fits analytical models to eclipsing binary light curves, 
 designed to quickly estimate the geometric properties of the eclipses: positions, widths and depths.

@@ -1,7 +1,5 @@
-# ligeor
-
 <div align="center">
-  <img width="300" height="300" src="logo2.png", alt="ligeor logo">
+  <img width="500" src="logo_h.png", alt="ligeor logo">
 </div>
 
 *ligeor* (LIght curve GEOmetRy) fits analytical models to eclipsing binary light curves, 

@@ -125,7 +125,7 @@ def check_eclipse_fitting_noise(fluxes_model, fluxes_obs, depth):
     '''
 
     sigma_res = np.std(fluxes_obs - fluxes_model)
-    if depth <= sigma_res:
+    if depth <= 0.5*sigma_res:
         return True
     else:
         return False
@@ -144,7 +144,7 @@ def check_eclipse_fitting_cosine(width):
     -------
     bool
     '''
-    if width >= 0.5:
+    if width >= 0.41:
         return True
     else:
         return False

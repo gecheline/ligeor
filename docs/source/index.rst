@@ -46,7 +46,6 @@ Basic Usage
    _ = model.compute_eclipse_params()
    print(model.eclipse_params)
 
-For different use cases, including non-phase folded light curves, see the Examples.
 
 *MCMC for ephemerides refinement and eclipse parameter distributions*
 
@@ -55,8 +54,6 @@ For different use cases, including non-phase folded light curves, see the Exampl
    sampler = EmceeSamplerPolyfit(filename, period, t0, delimiter=' ', usecols = (0,1,2))
    sampler.run_sampler()
    sampler.compute_results(burnin=1000)
-
-For more detailed description of each usecase and viewing/storing results, see the Examples.
 
 
 .. toctree::

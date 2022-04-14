@@ -218,6 +218,11 @@ class Polyfit(Model):
 
         self._chain_extremes()
         self.model = self.fv(x=self.phases)
+        self.best_fit = {}
+        self.best_fit['func'] = 'polyfit'
+        self.best_fit['knots'] = self.knots
+        self.best_fit['coeffs'] = self.coeffs
+        self.best_fit['extremes'] = self.extremes
         
         return self.knots, self.coeffs, self.extremes
     

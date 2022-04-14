@@ -12,43 +12,50 @@ class EbParams(object):
         Parameters
         ----------
         eclipse_params: dict
-            Dictionary of the eclipse parameters determined from the two-Gaussian model or manually.
+            Dictionary of the eclipse parameters determined from the two-Gaussian model or manually. 
+            Expects the following keys: primary_position, secondary_position, primary_width, secondary_width,
+            primary_depth, secondary_depth, and (optional) eclipse_edges
         refine_with_ellc: bool
             If true, an ellc.lc model will be fitted to the eclipses only to further refine 
             rsum, teffratio, as well as rratio and incl.
 
         '''
-
-        self.pos1 = eclipse_params['primary_position']
-        self.pos2 = eclipse_params['secondary_position']
-        self.width1 = eclipse_params['primary_width']
-        self.width2 = eclipse_params['secondary_width']
-        self.depth1 = eclipse_params['primary_depth']
-        self.depth2 = eclipse_params['secondary_depth']
-        self.edges = eclipse_params['eclipse_edges']
-         # computation fails if sep<0, so we need to adjust for it here.
-        sep = self.pos2 - self.pos1
-        if sep < 0:
-            self.sep = 1+sep
+        if not isinstance(eclipse_params, dict):
+            raise TypeError('eclipse_params should be a dictionary with the following keys: \
+                primary_position, secondary_position, primary_width, secondary_width, primary_depth, secondary_depth, \
+                and eclipse_edges. Pass the correct type of calculate it first from a model with .compute_eclipse_params()')
+        
         else:
-            self.sep = sep
+            self.pos1 = eclipse_params['primary_position']
+            self.pos2 = eclipse_params['secondary_position']
+            self.width1 = eclipse_params['primary_width']
+            self.width2 = eclipse_params['secondary_width']
+            self.depth1 = eclipse_params['primary_depth']
+            self.depth2 = eclipse_params['secondary_depth']
+            self.edges = eclipse_params['eclipse_edges']
+            # computation fails if sep<0, so we need to adjust for it here.
+            sep = self.pos2 - self.pos1
+            if sep < 0:
+                self.sep = 1+sep
+            else:
+                self.sep = sep
 
-        self._ecc_w()
-        self._teffratio()
-        self._rsum()
+            self._ecc_w()
+            self._teffratio()
+            self._rsum()
 
-        if fit_eclipses:
-            phases = kwargs.get('phases', [])
-            fluxes = kwargs.get('fluxes', [])
-            sigmas = kwargs.get('sigmas', [])
+            if fit_eclipses:
+                phases = kwargs.get('phases', [])
+                fluxes = kwargs.get('fluxes', [])
+                sigmas = kwargs.get('sigmas', [])
 
-            if len(phases) == 0 or len(fluxes) == 0 or len(sigmas) == 0:
-                raise ValueError('Please provide values for the phases, fluxes and sigmas of the light curve!')
+                if len(phases) == 0 or len(fluxes) == 0 or len(sigmas) == 0:
+                    raise ValueError('Please provide values for the phases, fluxes and sigmas of the light curve!')
 
-            self.refine_with_ellc(phases, fluxes, sigmas)
-        else:
-            self.rratio = 1.
-            self.incl = 90.
+                self.refine_with_ellc(phases, fluxes, sigmas)
+            else:
+                self.rratio = 1.
+                self.incl = 90.
 
 
     @staticmethod

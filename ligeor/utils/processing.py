@@ -1,8 +1,5 @@
 import numpy as np
-try:
-    import distl
-except:
-    raise ModuleNotFoundError
+import distl
 
 
 def sample_skewed_gaussian(mean, sigma_low, sigma_high, size=1000):
@@ -107,8 +104,8 @@ def compute_combined_2g_pf_value(value_2g=1, value_2g_sigma_low=0, value_2g_sigm
     '''
     # from 2g and pf to combined values
         
-    print('2g fit: P = %.5f + %.5f - %.5f' % (value_2g, value_2g_sigma_high, value_2g_sigma_low))
-    print('pf fit: P = %.5f + %.5f - %.5f' % (value_pf, value_pf_sigma_high, value_pf_sigma_low))
+    # print('2g fit: P = %.5f + %.5f - %.5f' % (value_2g, value_2g_sigma_high, value_2g_sigma_low))
+    # print('pf fit: P = %.5f + %.5f - %.5f' % (value_pf, value_pf_sigma_high, value_pf_sigma_low))
     
     if ~np.isnan(weight_2g) and ~np.isnan(weight_pf):
         wratio = weight_2g/weight_pf
@@ -116,8 +113,8 @@ def compute_combined_2g_pf_value(value_2g=1, value_2g_sigma_low=0, value_2g_sigm
         nsamples_2g = int(wratio*nsamples/(1+wratio))
         nsamples_pf = int(nsamples/(1+wratio))
 
-        print('values check: w_2g = %.6f, w_pf=%.6f, N_2g = %i, N_pf = %i'
-         % (weight_2g, weight_pf, nsamples_2g, nsamples_pf))
+        # print('values check: w_2g = %.6f, w_pf=%.6f, N_2g = %i, N_pf = %i'
+        #  % (weight_2g, weight_pf, nsamples_2g, nsamples_pf))
 
         samples_2g = sample_skewed_gaussian(value_2g, value_2g_sigma_low, value_2g_sigma_high, size=nsamples_2g)
         samples_pf = sample_skewed_gaussian(value_pf, value_pf_sigma_low, value_pf_sigma_high, size=nsamples_pf)

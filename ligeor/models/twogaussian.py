@@ -48,7 +48,7 @@ class TwoGaussianModel(Model):
                 'CG12E2': ['C', 'mu1', 'd1', 'sigma1', 'mu2', 'd2', 'sigma2', 'Aell']
                 }
 
-
+    
     def isolate_param_vals_for_model(self, model_params, func):
         '''
         Isolates only parameter values pertaining to a model "func",

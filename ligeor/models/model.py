@@ -6,7 +6,7 @@ class Model(object):
 
     def __init__(self, phases, fluxes, sigmas, filename, n_downsample, usecols, delimiter, phase_folded, period, t0):
         '''
-        Computes the two-Gaussian model light curves of the input data.
+        Computes a model light curve of the input data.
 
         Parameters
         ----------
@@ -50,6 +50,7 @@ class Model(object):
 
         from ligeor.utils.interactive import DraggableLine
         phases_w, fluxes_w, sigmas_w = extend_phasefolded_lc(self.phases, self.fluxes, self.sigmas)
+        phases_m, fluxes_m, sigmas_m = extend_phasefolded_lc(self.phases, self.model, np.nan*np.ones_like(self.model))
         [ecl1_l, ecl1_r, ecl2_l, ecl2_r] = self.eclipse_params['eclipse_edges']
         pos1, pos2 = self.eclipse_params['primary_position'], self.eclipse_params['secondary_position']
         
@@ -57,7 +58,7 @@ class Model(object):
         fig = plt.figure(figsize=(10,8))
         ax = fig.add_subplot(111)
         ax.plot(phases_w, fluxes_w, 'k.')
-        plt.plot(phases_w, self.twogfuncs[self.best_fit](phases_w, *self.fits[self.best_fit][0]), '-', label=self.best_fit)
+        plt.plot(phases_m, fluxes_m, '-', label=self.best_fit['func'])
         lines = []
         lines.append(ax.axvline(x=pos1, c='#2B71B1', lw=2, label='primary'))
         lines.append(ax.axvline(x=pos2, c='#FF702F', lw=2, label='secondary'))

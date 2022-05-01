@@ -7,6 +7,7 @@ from sklearn.preprocessing import MinMaxScaler
 plt.style.use('science')
 from scipy.interpolate import interp1d
 import cmasher as cmr
+from sklearn.model_selection import GridSearchCV
 
 class Ebai():
     
@@ -36,7 +37,7 @@ class Ebai():
         self.normalize_data = normalize_data
         self.scale_params = scale_params
         self.scaler = scaler
-        
+    
     def train(self, xtrain, ytrain, **kwargs):
         '''
         Trains the EBAI model.
@@ -68,9 +69,15 @@ class Ebai():
             ytrain_scaled = ytrain
 
         if self.model_type == 'knn':
-            self.model = KNeighborsRegressor(**kwargs)
+            if hasattr(self, 'best_params'):
+                self.model=KNeighborsRegressor(**self.best_params, **kwargs)
+            else:
+                self.model = KNeighborsRegressor(**kwargs)
         elif self.model_type == 'mlp':
-            self.model = MLPRegressor(**kwargs)
+            if hasattr(self, 'best_params'):
+                self.model=MLPRegressor(**self.best_params, **kwargs)
+            else:
+                self.model = MLPRegressor(**kwargs)
         else:
             raise ValueError("Unrecognized model type {}. Please provide one of ['knn', 'mlp'].".format(self.model_type))
         
@@ -132,6 +139,52 @@ class Ebai():
         else:
             return params_pred
 
+    def grid_search_cv(self, X_train, y_train, distributions=None, **kwargs):
+        '''
+        Runs a grid search with cross validation across the specified distributions.
+        
+        Parameters
+        ----------
+        X_train: array-like
+            Input array to train the regressor on.
+        y_train: array-like
+            Output array to train the regressor on.
+        distributions: dict
+            Parameters of the sklearn model with distibutions for grid search to be run on.
+            
+        Returns
+        -------
+        clf: the GridSearchCV instance created
+        search: the search instance with results
+        '''
+        
+        if distributions is None:
+            raise ValueError('Please provide a dictionary with parameters and values to run grid search on!')
+
+        if self.model is None:
+            warnings.warn('Initializing a {} model for grid search CV.'.format(self.model_type))
+            if self.model_type == 'knn':
+                self.model = KNeighborsRegressor()
+                
+            else:
+                self.model = MLPRegressor()
+        
+        clf_kwargs = dict(
+            scoring=kwargs.pop('scoring', None), 
+            n_jobs=kwargs.pop('n_jobs', None), 
+            refit=kwargs.pop('refit', True), 
+            cv=kwargs.pop('cv', None), 
+            verbose=kwargs.pop('verbose', 2), 
+            pre_dispatch=kwargs.pop('pre_dispatch','2*n_jobs'), 
+            error_score=kwargs.pop('error_score', np.nan), 
+            return_train_score=kwargs.pop('return_train_score', False)
+        )
+        
+        clf = GridSearchCV(self.model, distributions, **clf_kwargs)
+        search = clf.fit(X_train, y_train)
+        
+        self.best_params = search.best_params_
+        return clf, search
     
     def plot_diagnostics(self, y_train, y_test, y_pred_train, y_pred_test, labels, style='scatter', savefile='', figsize=(7, 3.5)):
         '''
@@ -205,12 +258,12 @@ class Ebai():
             fig, axes = plt.subplots(nrows = 1, ncols = 2, figsize=figsize)
             
             axes[0].hist(ocs_train_list, bins=10, weights=weights_train_list, color = colors, 
-                        label=[r'$i$', r'$T_{\mathrm{eff},2}/T_{\mathrm{eff},1}$', r'$FF$', r'$q$'])
+                        label=labels)
             axes[0].set_xlabel('O-C differences [\%]')
             axes[0].set_ylabel('Distribution [\%]')
             axes[0].legend()
             
-            axes[1].hist(ocs_train_list, bins=10, weights=weights_train_list, color = colors, 
+            axes[1].hist(ocs_test_list, bins=10, weights=weights_test_list, color = colors, 
                         label=labels)
             axes[1].set_xlabel('O-C differences [\%]')
             axes[1].legend()

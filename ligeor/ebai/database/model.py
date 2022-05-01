@@ -2,6 +2,7 @@ import numpy as np
 from ligeor.models import polyfit, twogaussian
 import warnings
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 class DatabaseModel():
     
@@ -47,9 +48,10 @@ class DatabaseModel():
         fluxes+noise 
         '''
         noise = np.random.normal(loc=0, scale=noise_level, size = fluxes.shape[0])
-        return fluxes + noise
+        return fluxes + noise, noise_level*np.ones_like(fluxes)
         
-    def fit_datapoint(self, fluxes, add_noise=True, noise_level=0.1, diagnose=False): 
+    def fit_datapoint(self, fluxes, add_noise_to_data=True, add_noise_to_model=False, 
+                      noise_level_data=1e-8, noise_level_model=1e-3, diagnose=False, **kwargs): 
         '''
         Fits the chosen analytical model to a single light curve.
         
@@ -71,43 +73,46 @@ class DatabaseModel():
         '''
         
         fluxes_orig = np.ndarray.copy(fluxes)
-        if add_noise == False:
-            warnings.warn('Option to add noise not checked. The fits may not work!')
-            sigmas = np.zeros(len(fluxes_orig))
+        if add_noise_to_data == False:
+            if 'sigmas' not in kwargs.keys():
+                warnings.warn('Option to add noise to data not checked and sigmas not provided. Adding default noise with stdev of 1e-8.')
+            sigmas = kwargs.pop('sigmas', 1e-8*np.ones_like(fluxes))
         else:
-            fluxes, sigmas = self.add_random_noise(fluxes, noise_level)
+            fluxes, sigmas = self.add_random_noise(fluxes, noise_level_data)
 
         if self.analytical_model == 'twogaussian':
-            twog = twogaussian.TwoGaussianModel(phases=self.phases, 
-                                    fluxes=fluxes, 
-                                    sigmas=sigmas, 
+            twog = twogaussian.TwoGaussianModel(phases=np.copy(self.phases), 
+                                    fluxes=np.copy(fluxes), 
+                                    sigmas=np.copy(sigmas), 
                                     )
             twog.fit()
-            if diagnose:
-                import matplotlib.pyplot as plt
-                plt.errorbar(x=self.phases, y=fluxes, yerr=sigmas, fmt='.')
-                for model in twog.models.keys():
-                    plt.plot(self.phases, twog.models[model])
-                plt.show()
-            return twog.model, np.sum((twog.model-fluxes_orig)**2/fluxes_orig**2)
+            model = twog.model
+            chi2 = np.sum((twog.model-fluxes_orig)**2/fluxes_orig**2)
         
         elif self.analytical_model == 'polyfit':
-            pf = polyfit.Polyfit(phases=self.phases, 
-                            fluxes=fluxes, 
-                            sigmas=sigmas, 
+            pf = polyfit.Polyfit(phases=np.copy(self.phases), 
+                            fluxes=np.copy(fluxes), 
+                            sigmas=np.copy(sigmas), 
                             )
             pf.fit()
-            if diagnose:
-                import matplotlib.pyplot as plt
-                plt.errorbar(x=self.phases, y=fluxes, yerr=sigmas, fmt='.')
-                plt.plot(self.phases, pf.model)
-                plt.show()
-            return pf.model, np.sum((pf.model-fluxes_orig)**2/fluxes_orig**2)
-        
+                
+            model = pf.model
+            chi2 = np.sum((pf.model-fluxes_orig)**2/fluxes_orig**2)
+
         else:
             raise ValueError("Unrecognized model {}. Choose one of ['twogaussian', 'polyfit']".format(self.analytical_model))
         
-    def fit_database(self, add_noise=True, noise_level = 0.01, 
+        if add_noise_to_model:
+            model, sigmas_model = self.add_random_noise(model, noise_level_model)
+            
+        if diagnose:
+            plt.errorbar(x=self.phases, y=fluxes, yerr=sigmas, fmt='.')
+            plt.plot(self.phases, model)
+            plt.show()
+        
+        return model, chi2
+        
+    def fit_database(self, add_noise_to_data=True, add_noise_to_model=False, noise_level_data = 1e-8, noise_level_model=0.001,
                            save=False, savefile='', continue_from_existing_model=False, continue_from_existing_file=False):
         '''
         Fits an analytical model to all light curves in the database.
@@ -146,7 +151,7 @@ class DatabaseModel():
                 db_model[:len_existing] = db_model_existing
                 db_model_chi2[:len_existing] = db_model_chi2_existing
                 
-        if continue_from_existing_file:            
+        elif continue_from_existing_file:            
             db_model_existing = np.load(savefile+'.npy')
             db_model_chi2_existing = np.load(savefile+'.chi2.npy')
             
@@ -162,7 +167,11 @@ class DatabaseModel():
                 pass
             else:
                 try:
-                    db_model[i], db_model_chi2[i] = self.transform_datapoint(self.phases, self.db_fluxes[i], add_noise=add_noise, noise_level=noise_level)
+                    db_model[i], db_model_chi2[i] = self.fit_datapoint(self.db_fluxes[i], 
+                                                                    add_noise_to_data=add_noise_to_data, 
+                                                                    add_noise_to_model=add_noise_to_model,
+                                                                    noise_level_data=noise_level_data,
+                                                                    noise_level_model=noise_level_model)
                 except:
                     pass
             

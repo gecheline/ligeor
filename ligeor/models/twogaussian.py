@@ -113,6 +113,27 @@ class TwoGaussianModel(Model):
         self.model = self.models[best_fit_func]
 
 
+    def compute_model(self, phases, best_fit=True, func='', param_values = []):
+        '''
+        Compute a model in an input phase array.
+
+        Parameters
+        ----------
+        phases: array-like
+            The input phases to compute the model in.
+        best_fit: bool
+            Whether to take the best fit values or user-provided ones.
+        func: str
+            (Optional) twoGaussian model function string to use, if best_fit is False.
+        param_values: array-like
+            (Optional) Parameter values of the twoGaussian model function, if best_fit is False.
+        '''
+        if best_fit:
+            func = self.best_fit['func']
+            param_values = self.best_fit['param_vals']
+            
+        return self.twogfuncs[func](phases, *param_values)
+
     def save_model(self, nbins=1000, func='', param_values = [], save_file=''):
         '''
         Save the best fit model to a file.

@@ -111,9 +111,9 @@ class Ebai():
                 fluxes_scaled = fluxes/fluxes.max()
                 if (len(phases) != len(phases_model)) & (phases_model is not None):
                     finterp = interp1d(phases, fluxes_scaled)
-                    fluxes_transform = finterp(self.phases).reshape(-1,1)
+                    fluxes_transform = finterp(self.phases).reshape(1,-1)
                 else:
-                    fluxes_transform = fluxes_scaled.reshape(-1,1)
+                    fluxes_transform = fluxes_scaled.reshape(1,-1)
                     
             else:
                 fluxes_transform = np.zeros((len(fluxes), len(phases_model)))

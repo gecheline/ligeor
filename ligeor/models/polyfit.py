@@ -238,6 +238,11 @@ class Polyfit(Model):
         y[s] = self.coeffs[3][0]*x[s]**2 + self.coeffs[3][1]*x[s] + self.coeffs[3][2]
 
         return y
+    
+    def compute_model(self, phases, best_fit=True):
+        if not best_fit:
+            raise NotImplemented('Polyfit cannot compute a custom model yet, run .fit() first and pass best_fit=True.')
+        return self.fv(phases)
 
 
     def plot(self, x, savefig=None, show=True):

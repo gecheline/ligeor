@@ -1,5 +1,8 @@
 import numpy as np
-import distl
+try:
+    import distl
+except:
+    raise ImportError('distl needs to be installed for sampling distributions.')
 
 
 def sample_skewed_gaussian(mean, sigma_low, sigma_high, size=1000):

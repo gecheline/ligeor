@@ -1,17 +1,23 @@
 import numpy as np
 import warnings
-from sklearn.neighbors import KNeighborsRegressor
-from sklearn.neural_network import MLPRegressor
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
 plt.style.use('science')
 from scipy.interpolate import interp1d
-from sklearn.model_selection import GridSearchCV
+
 try:
     import cmasher as cmr
     _use_cmr = True
 except:
     _use_cmr = False
+
+try:
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.neighbors import KNeighborsRegressor
+    from sklearn.neural_network import MLPRegressor
+    from sklearn.model_selection import GridSearchCV
+except:
+    raise ImportError('scikit-learn needs to be installed to run EBAI.')
+
 
 class Ebai():
     

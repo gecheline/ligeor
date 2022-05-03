@@ -6,8 +6,12 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 plt.style.use('science')
 from scipy.interpolate import interp1d
-import cmasher as cmr
 from sklearn.model_selection import GridSearchCV
+try:
+    import cmasher as cmr
+    _use_cmr = True
+except:
+    _use_cmr = False
 
 class Ebai():
     
@@ -253,8 +257,11 @@ class Ebai():
                 ocs_test_list.append(ocs_clean)
                 weights_test_list.append(list(100/len(ocs_clean)*np.ones(len(ocs_clean))))
 
-                
-            colors = cmr.take_cmap_colors('cmr.lavender', params_len, cmap_range=(0.15, 0.85), return_fmt='hex')
+            if _use_cmr:
+                colors = cmr.take_cmap_colors('cmr.lavender', params_len, cmap_range=(0.15, 0.85), return_fmt='hex')
+            else:
+                cmap = plt.get_cmap('viridis')
+                colors = cmap.colors[::round(len(cmap)/params_len)]
             fig, axes = plt.subplots(nrows = 1, ncols = 2, figsize=figsize)
             
             axes[0].hist(ocs_train_list, bins=10, weights=weights_train_list, color = colors, 

@@ -2,7 +2,10 @@ import numpy as np
 import phoebe
 phoebe.interactive_checks_off()
 phoebe.interactive_constraints_off()
-import distl
+try:
+    import distl
+except:
+    raise ImportError('distl needs to be installed for sampling distributions.')
 
 class System():
     

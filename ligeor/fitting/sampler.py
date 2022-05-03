@@ -1,5 +1,8 @@
 import numpy as np
-import emcee 
+try:
+    import emcee 
+except:
+    raise ImportError('emcee needs to be installed to run samplers.')
 from ligeor.utils.lcutils import *
 from multiprocessing import Pool
 

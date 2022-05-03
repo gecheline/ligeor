@@ -1,7 +1,10 @@
 import numpy as np
-import phoebe
-phoebe.interactive_checks_off()
-phoebe.interactive_constraints_off()
+try:
+    import phoebe
+    phoebe.interactive_checks_off()
+    phoebe.interactive_constraints_off()
+except:
+    raise ImportError('phoebe needs to be installed for building synthetic databases.')
 try:
     import distl
 except:

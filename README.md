@@ -18,10 +18,12 @@ The result of the fitting and/or sampling is geometrical eclipse parameter estim
 *ligeor* depends on the following packages:
    * numpy
    * scipy
-   * emcee
 
-and optionally, to run distribution math:
-   * distl
+and optionally:
+   * distl (distributions sampling and computations)
+   * emcee (MCMC sampling)
+   * phoebe (for computation of synthetic databases)
+   * cmasher (for nice looking diagnostic plots)
 
 Install *ligeor* from pip
 ```

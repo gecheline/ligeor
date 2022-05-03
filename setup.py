@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(name='ligeor',
-      version='1.0b',
+      version='1.0.1',
       description='LIght curve GEOmetRy of eclipsing binaries',
       url='https://github.com/gecheline/ligeor',
       author='Angela Kochoska',
